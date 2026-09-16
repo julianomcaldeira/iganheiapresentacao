@@ -69,11 +69,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setLoading(true);
           // Defer to avoid deadlock; await both before clearing loading
           setTimeout(async () => {
-            await Promise.all([
-              fetchProfile(session.user.id),
-              fetchRole(session.user.id),
-            ]);
-            setLoading(false);
+            try {
+              await Promise.all([
+                fetchProfile(session.user.id),
+                fetchRole(session.user.id),
+              ]);
+            } catch (err) {
+              console.error('[Auth] profile/role fetch error:', err);
+            } finally {
+              setLoading(false);
+            }
           }, 0);
         } else {
           setProfile(null);
@@ -95,6 +100,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           fetchRole(session.user.id),
         ]);
       }
+      setLoading(false);
+    }).catch((err) => {
+      console.error('[Auth] getSession error:', err);
       setLoading(false);
     });
 
