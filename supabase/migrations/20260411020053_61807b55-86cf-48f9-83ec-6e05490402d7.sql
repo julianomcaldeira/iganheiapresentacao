@@ -1,0 +1,2 @@
+ALTER TABLE public.ia_prompts DROP CONSTRAINT ia_prompts_tipo_check;
+ALTER TABLE public.ia_prompts ADD CONSTRAINT ia_prompts_tipo_check CHECK (tipo = ANY (ARRAY['analise_edital'::text, 'robo_lances'::text, 'monitor_pregao'::text, 'analise_estrategica'::text, 'pecas_impugnacao'::text, 'pecas_recurso'::text, 'pecas_contrarrazoes'::text, 'pecas_esclarecimento'::text]));

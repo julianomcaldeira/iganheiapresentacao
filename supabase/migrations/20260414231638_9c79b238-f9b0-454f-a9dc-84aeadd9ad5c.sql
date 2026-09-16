@@ -1,0 +1,1 @@
+ALTER TABLE public.cliente_regras ADD COLUMN IF NOT EXISTS campos jsonb DEFAULT '[]'::jsonb;

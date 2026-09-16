@@ -1,0 +1,61 @@
+project_id = "xufjhduntcdmejrjwoqj"
+
+[functions.create-user]
+verify_jwt = false
+
+[functions.manage-user]
+verify_jwt = false
+
+[functions.setup-admin]
+verify_jwt = false
+
+[functions.analyze-licitacao]
+verify_jwt = false
+
+[functions.chat-edital]
+verify_jwt = false
+
+[functions.generate-peca]
+verify_jwt = false
+
+[functions.analyze-estrategico]
+verify_jwt = false
+
+[functions.analyze-estrategico-batch]
+verify_jwt = false
+
+[functions.support-ai-assistant]
+verify_jwt = false
+
+[functions.ticket-webhook]
+verify_jwt = false
+
+[functions.taskgi-sync]
+verify_jwt = false
+
+[functions.taskgi-webhook]
+verify_jwt = false
+
+[functions.analyze-edital-ocr]
+verify_jwt = false
+
+[functions.compliance-checker]
+verify_jwt = false
+
+[functions.conlicitacao-webhook]
+verify_jwt = false
+
+[functions.conlicitacao-sync]
+verify_jwt = false
+
+[functions.send-email-ses]
+verify_jwt = false
+
+[functions.news-intelligence]
+verify_jwt = false
+
+[functions.cron-newsletter]
+verify_jwt = false
+
+[functions.idocumentei-sync]
+verify_jwt = false

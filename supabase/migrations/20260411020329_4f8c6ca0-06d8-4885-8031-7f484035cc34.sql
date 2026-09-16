@@ -1,0 +1,1 @@
+ALTER TABLE public.produtos ADD COLUMN unidade_negocio text;
