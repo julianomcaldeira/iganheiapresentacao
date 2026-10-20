@@ -63,6 +63,7 @@ Logins de teste (senha: `Startgi2026@`):
 | `juliano@startgi.com.br` | admin (vê todos os clientes) |
 | `maria.gerente@startgi.com.br` | gerente |
 | `carlos.operador@startgi.com.br` | usuário |
+| `andre@startgi.com.br` | admin (seu acesso) |
 
 Para recriar o banco do zero: `npx supabase db reset` e depois execute `supabase/seed-demo.sql` no SQL Editor do Supabase (ou via API).
 
