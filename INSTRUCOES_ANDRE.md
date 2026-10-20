@@ -1,89 +1,76 @@
-# Configuração Local - iGanhei
+# Trabalho no iGanhei - Guia para o André
 
-## Pré-requisitos
-- [Node.js](https://nodejs.org/) (v18+)
-- Git
-- Conta GitHub com acesso ao repositório
+## Contexto
+- Repositório: `git@github.com:julianomcaldeira/iganheiapresentacao.git` (branch `main`)
+- O Render está conectado ao repo e faz **deploy automático a cada push na `main`**.
+- Projeto Supabase: `jkhhyoxwbfvwdbggromg` (URL `https://jkhhyoxwbfvwdbggromg.supabase.co`)
+- Login do André: `andre@startgi.com.br` / `Startgi2026@` (role admin)
 
-## Passo 1 — Clonar o repositório
+## Como trabalhar com o opencode
+
+1. Abra o terminal na pasta do projeto:
+   ```bash
+   cd ~/Documents/.../iganheiapresentacao   # ajuste o caminho
+   ```
+2. Sempre puxe antes de começar:
+   ```bash
+   git pull origin main
+   ```
+3. Inicie o opencode:
+   ```bash
+   opencode
+   ```
+4. Descreva a tarefa em português (ex.: "adicionar filtro por data na tela de tarefas").
+5. Revise o diff antes de commitar:
+   ```bash
+   git diff
+   ```
+6. Commit + push (isso dispara o deploy no Render):
+   ```bash
+   git add -A
+   git commit -m "descrição curta do que mudou"
+   git push origin main
+   ```
+
+## Deploy no Render (automático)
+
+- Cada `git push origin main` dispara um build no Render.
+- Acompanhe em https://dashboard.render.com → serviço **iganhei** → aba **Events/Logs**.
+- Build command: `npm install && npm run build` | Publish dir: `dist`.
+- Variáveis de ambiente já configuradas no Render (`VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`) — não mexer.
+- Se o build falhar: leia o log, corrija o código, commit + push novamente.
+- Domínio final: `startgiteste.com.br` (DNS já apontado no Registro.br).
+
+## Comandos úteis
 
 ```bash
-git clone git@github.com:julianomcaldeira/iganheiapresentacao.git
-cd iganheiapresentacao
+npm run dev            # roda local em http://www.iganheinovo.com.br (precisa /etc/hosts)
+npm run build          # build de produção
+npm run lint           # lint
+npx tsc --noEmit -p tsconfig.app.json   # typecheck
 ```
 
-## Passo 2 — Instalar dependências
+## Regras do time
 
-```bash
-npm install
-```
+- Sempre `git pull` antes de trabalhar.
+- Nunca commitar `.env` (está no `.gitignore`).
+- Não editar `supabase/.temp/` (gitignored).
+- Migrations novas vão em `supabase/migrations/` com prefixo de timestamp.
+- Seed de demo está em `supabase/seed-demo.sql`.
+- Cache de leitura (60s) em `src/integrations/supabase/cachedFetch.ts`: após mudar dados no banco, espere até 1 min ou limpe o cache.
 
-## Passo 3 — Configurar as variáveis de ambiente
+## Cuidados importantes
 
-O projeto já está conectado a um Supabase próprio (não é mais o do Lovable). Copie o arquivo de exemplo:
+- RLS por cliente: usuário não-admin vê apenas o próprio `cliente_id` (vem de `profiles.cliente_id`).
+- Auth: não remover a lógica de `TOKEN_REFRESHED` no `AuthContext` (evita reload de tela).
+- Não alterar `src/integrations/supabase/client.ts` sem necessidade (config do cache).
+- Edge Functions estão em `supabase/functions/` e são deployadas separadamente via Supabase CLI.
 
-```bash
-cp .env.example .env
-```
+## Se algo quebrar em produção
 
-O `.env` já vem com as chaves corretas do projeto novo — não altere nada. Ele está no `.gitignore` e não vai para o repositório.
-
-> Sem o `.env`, o app não conecta no banco e o login falha.
-
-## Passo 4 — Configurar o DNS local
-
-O app roda com o endereço `www.iganheinovo.com.br`. Para que o navegador resolva esse endereço para o seu computador:
-
-Abra o Terminal e rode:
-
-```bash
-sudo sh -c 'echo "127.0.0.1 www.iganheinovo.com.br" >> /etc/hosts'
-```
-
-Digite sua senha de admin do Mac quando solicitado.
-
-## Passo 5 — Iniciar o servidor
-
-```bash
-npm run dev
-```
-
-O servidor vai iniciar. Acesse no navegador:
-
-**http://www.iganheinovo.com.br**
-
-## Dados demo e logins
-
-O banco do Supabase já está populado com dados de demonstração (licitações, contratos, tarefas, tickets, mensageria etc.) — gerado por `supabase/seed-demo.sql`.
-
-Logins de teste (senha: `Startgi2026@`):
-
-| E-mail | Perfil |
-|---|---|
-| `juliano@startgi.com.br` | admin (vê todos os clientes) |
-| `maria.gerente@startgi.com.br` | gerente |
-| `carlos.operador@startgi.com.br` | usuário |
-| `andre@startgi.com.br` | admin (seu acesso) |
-
-Para recriar o banco do zero: `npx supabase db reset` e depois execute `supabase/seed-demo.sql` no SQL Editor do Supabase (ou via API).
-
-## Trabalhando em equipe (git)
-
-### Antes de começar a trabalhar:
-```bash
-git pull origin main
-```
-
-### Depois de fazer alterações:
-```bash
-git add -A
-git commit -m "descreva o que você fez"
-git push origin main
-```
-
-### Fluxo recomendado:
-1. `git pull` antes de começar
-2. Faça suas alterações
-3. `git add -A && git commit -m "mensagem" && git push`
-4. O outro desenvolvedor roda `git pull` para pegar suas alterações
-5. O Vite recarrega automaticamente quando os arquivos mudam
+1. Verifique os logs do Render (build + runtime).
+2. Reverta o último commit se necessário:
+   ```bash
+   git revert HEAD && git push origin main
+   ```
+3. Teste localmente com `npm run build` antes de pushar.
