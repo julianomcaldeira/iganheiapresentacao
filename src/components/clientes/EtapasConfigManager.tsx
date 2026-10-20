@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { sortEtapasForDisplay } from '@/lib/etapasOrder';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
@@ -70,9 +71,17 @@ const ETAPAS_SISTEMA = [
     cor: '#6366F1',
   },
   {
+    codigo: 'aprovacoes',
+    nome: 'Aprovações',
+    descricao: 'Fluxo de aprovação com múltiplos aprovadores',
+    icon: CheckCircle,
+    obrigatoria: false,
+    cor: '#10B981',
+  },
+  {
     codigo: 'esclarecimento_impugnacao',
-    nome: 'Esclarecimento / Recurso',
-    descricao: 'Geração de peças de esclarecimento e recursos via IA',
+    nome: 'Peças Jurídicas',
+    descricao: 'Geração de peças jurídicas (esclarecimento, impugnação, recurso e contrarrazões) via IA',
     icon: Scale,
     obrigatoria: false,
     cor: '#8B5CF6',
@@ -84,14 +93,6 @@ const ETAPAS_SISTEMA = [
     icon: Gavel,
     obrigatoria: false,
     cor: '#7C3AED',
-  },
-  {
-    codigo: 'aprovacoes',
-    nome: 'Aprovações',
-    descricao: 'Fluxo de aprovação com múltiplos aprovadores',
-    icon: CheckCircle,
-    obrigatoria: false,
-    cor: '#10B981',
   },
   {
     codigo: 'concorrentes',
@@ -474,13 +475,21 @@ export function EtapasConfigManager({ clienteId }: EtapasConfigManagerProps) {
 
     const data = cfgRes.data;
     if (data && data.length > 0) {
-      setConfigs(data.map(d => ({
+      const loaded = data.map(d => ({
         id: d.id,
         etapa_codigo: d.etapa_codigo,
         ativo: d.ativo,
         ordem: d.ordem,
         configuracoes: (d.configuracoes as Record<string, unknown>) || {},
-      })));
+      }));
+      // Normaliza exibição para a ordem canônica quando o banco ainda tem a legada
+      // (o usuário persiste ao clicar em Salvar)
+      const normalized = sortEtapasForDisplay(
+        loaded,
+        (c) => c.etapa_codigo,
+        (c) => c.ordem
+      ).map((c, i) => ({ ...c, ordem: i }));
+      setConfigs(normalized);
     } else {
       setConfigs(ETAPAS_SISTEMA.map((e, idx) => ({
         etapa_codigo: e.codigo,

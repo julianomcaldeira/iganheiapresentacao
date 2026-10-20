@@ -63,6 +63,14 @@ import {
   AlertDialogCancel,
 } from '@/components/ui/alert-dialog';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import {
+  drawTimbradoTop,
+  drawTimbradoLogo,
+  drawTimbradoFooter,
+  getDataUrlImageSize,
+  LOGO_TOP,
+} from '@/lib/timbradoPdf';
+import { nomeArquivoPeca } from '@/lib/demoPdfGenerator';
 
 interface Peca {
   id: string;
@@ -104,9 +112,10 @@ const TIPOS_PECAS = [
   { value: 'pecas_esclarecimento', label: 'Esclarecimento', icon: HelpCircle, color: 'text-green-500', bgColor: 'bg-green-500/10' },
 ];
 
-type PDFLayout = 'professional' | 'minimal' | 'legal';
+type PDFLayout = 'professional' | 'minimal' | 'legal' | 'timbrado';
 
 const PDF_LAYOUTS: { value: PDFLayout; label: string; description: string }[] = [
+  { value: 'timbrado', label: 'Timbrado i-Ganhei', description: 'Papel timbrado padrão com o logo do cliente centralizado' },
   { value: 'professional', label: 'Profissional', description: 'Cabeçalho colorido com logo e dados completos' },
   { value: 'minimal', label: 'Minimalista', description: 'Layout limpo e simples, foco no conteúdo' },
   { value: 'legal', label: 'Jurídico Formal', description: 'Estilo tradicional de documento legal' },
@@ -131,7 +140,7 @@ export function LicitacaoPecasModal({
   const [editedContent, setEditedContent] = useState('');
   const [saving, setSaving] = useState(false);
   const [showLayoutDialog, setShowLayoutDialog] = useState(false);
-  const [selectedLayout, setSelectedLayout] = useState<PDFLayout>('professional');
+  const [selectedLayout, setSelectedLayout] = useState<PDFLayout>('timbrado');
   const [pecaToExport, setPecaToExport] = useState<Peca | null>(null);
   
   const [formData, setFormData] = useState({
@@ -181,6 +190,7 @@ export function LicitacaoPecasModal({
       if (data?.logo_url) {
         try {
           const response = await fetch(data.logo_url);
+          if (!response.ok) throw new Error(`Logo HTTP ${response.status}`);
           const blob = await response.blob();
           const reader = new FileReader();
           reader.onloadend = () => {
@@ -189,6 +199,7 @@ export function LicitacaoPecasModal({
           reader.readAsDataURL(blob);
         } catch (err) {
           console.error('Error loading logo:', err);
+          toast.warning('Logo do cliente não pôde ser carregado para o timbrado — confira o arquivo em Clientes > Gerenciar clientes.');
         }
       }
     } catch (error) {
@@ -281,7 +292,7 @@ export function LicitacaoPecasModal({
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${peca.titulo.replace(/[^a-z0-9]/gi, '_')}.txt`;
+    a.download = nomeArquivoPeca(licitacaoNumero, peca.titulo).replace(/\.pdf$/i, '.txt');
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -312,11 +323,32 @@ export function LicitacaoPecasModal({
     const margin = 20;
     const contentWidth = pageWidth - (margin * 2);
 
+    // Timbrado i-Ganhei: papel padrão + logo do cliente centralizado no cabeçalho
+    const isTimbrado = selectedLayout === 'timbrado';
+    let logoRatio = 3;
+    if (isTimbrado && logoImage) {
+      try {
+        const size = await getDataUrlImageSize(logoImage);
+        if (size.w > 0 && size.h > 0) logoRatio = size.w / size.h;
+      } catch {}
+    }
+    let logoH = 0;
+    if (logoImage) {
+      logoH = 70 / logoRatio;
+      if (logoH > 20) logoH = 20;
+    }
+    if (isTimbrado && !logoImage && clienteData && !clienteData.logo_url) {
+      toast.info('Cliente sem logo cadastrado em Gerenciar clientes — exportando timbrado sem logo');
+    }
+    // faixa (12–18) + margem + logo (LOGO_TOP–LOGO_TOP+logoH) + títulos => início do conteúdo
+    const timbradoHeaderHeight = LOGO_TOP + logoH + 26;
+
     // Layout-specific settings
     const layoutConfig = {
       professional: { headerHeight: 45, footerHeight: 25, headerColor: [79, 70, 229] as [number, number, number] },
       minimal: { headerHeight: 25, footerHeight: 15, headerColor: [255, 255, 255] as [number, number, number] },
       legal: { headerHeight: 35, footerHeight: 20, headerColor: [30, 30, 30] as [number, number, number] },
+      timbrado: { headerHeight: timbradoHeaderHeight, footerHeight: 22, headerColor: [255, 255, 255] as [number, number, number] },
     };
 
     const config = layoutConfig[selectedLayout];
@@ -433,6 +465,32 @@ export function LicitacaoPecasModal({
       doc.text(`Página ${pageNumber} de ${totalPages}`, pageWidth - margin, pageHeight - 10, { align: 'right' });
     };
 
+    const addTimbradoHeaderFooter = (pageNumber: number, totalPages: number) => {
+      drawTimbradoTop(doc);
+      const logoEndY = drawTimbradoLogo(doc, logoImage, LOGO_TOP, 70, 20, logoRatio);
+      const titleY = logoEndY + 8;
+
+      doc.setTextColor(30, 30, 30);
+      doc.setFont('times', 'bold');
+      doc.setFontSize(14);
+      doc.text(tipoPeca?.label?.toUpperCase() || 'PEÇA JURÍDICA', pageWidth / 2, titleY, { align: 'center' });
+
+      doc.setFont('times', 'normal');
+      doc.setFontSize(11);
+      doc.text(peca.titulo, pageWidth / 2, titleY + 7, { align: 'center' });
+
+      doc.setFontSize(10);
+      doc.text(`Licitação nº ${licitacaoNumero}`, pageWidth / 2, titleY + 13, { align: 'center' });
+
+      drawTimbradoFooter(
+        doc,
+        pageNumber,
+        totalPages,
+        clienteData ? { nome: clienteData.nome, cnpj: clienteData.cnpj } : null,
+        peca.profile?.nome ? `Por: ${peca.profile.nome}` : null
+      );
+    };
+
     const addHeaderFooter = (pageNumber: number, totalPages: number) => {
       switch (selectedLayout) {
         case 'minimal':
@@ -441,18 +499,22 @@ export function LicitacaoPecasModal({
         case 'legal':
           addLegalHeaderFooter(pageNumber, totalPages);
           break;
+        case 'timbrado':
+          addTimbradoHeaderFooter(pageNumber, totalPages);
+          break;
         default:
           addProfessionalHeaderFooter(pageNumber, totalPages);
       }
     };
 
     // Content settings based on layout
-    doc.setFontSize(selectedLayout === 'legal' ? 12 : 11);
-    doc.setFont(selectedLayout === 'legal' ? 'times' : 'helvetica', 'normal');
+    const useSerif = selectedLayout === 'legal' || selectedLayout === 'timbrado';
+    doc.setFontSize(selectedLayout === 'legal' || selectedLayout === 'timbrado' ? 12 : 11);
+    doc.setFont(useSerif ? 'times' : 'helvetica', 'normal');
     doc.setTextColor(30, 30, 30);
     
     const lines = doc.splitTextToSize(peca.conteudo_gerado, contentWidth);
-    const lineHeight = selectedLayout === 'legal' ? 7 : 6;
+    const lineHeight = selectedLayout === 'legal' || selectedLayout === 'timbrado' ? 7 : 6;
     const usableHeight = pageHeight - config.headerHeight - config.footerHeight - margin;
     const linesPerPage = Math.floor(usableHeight / lineHeight);
     const totalPages = Math.ceil(lines.length / linesPerPage);
@@ -464,9 +526,9 @@ export function LicitacaoPecasModal({
 
       const startY = config.headerHeight + 10;
       const pageLines = lines.slice(currentLine, currentLine + linesPerPage);
-      
-      doc.setFontSize(selectedLayout === 'legal' ? 12 : 11);
-      doc.setFont(selectedLayout === 'legal' ? 'times' : 'helvetica', 'normal');
+
+      doc.setFontSize(selectedLayout === 'legal' || selectedLayout === 'timbrado' ? 12 : 11);
+      doc.setFont(selectedLayout === 'legal' || selectedLayout === 'timbrado' ? 'times' : 'helvetica', 'normal');
       doc.setTextColor(30, 30, 30);
       
       pageLines.forEach((line: string, index: number) => {
@@ -476,7 +538,7 @@ export function LicitacaoPecasModal({
       currentLine += linesPerPage;
     }
 
-    doc.save(`${peca.titulo.replace(/[^a-z0-9]/gi, '_')}.pdf`);
+    doc.save(nomeArquivoPeca(licitacaoNumero, peca.titulo));
     toast.success('PDF exportado com sucesso');
     setPecaToExport(null);
   };

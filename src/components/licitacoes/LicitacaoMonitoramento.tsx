@@ -17,6 +17,7 @@ import { format, isToday, isYesterday } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { toast } from 'sonner';
 import { exportReport } from '@/lib/exportUtils';
+import { gerarMensagensMonitoramento } from '@/lib/monitoramentoSimulado';
 
 interface Mensagem {
   id: string;
@@ -31,6 +32,9 @@ interface Mensagem {
 interface Props {
   licitacaoId: string;
   licitacaoNumero?: string;
+  licitacaoObjeto?: string;
+  licitacaoOrgao?: string;
+  licitacaoValorEstimado?: number;
 }
 
 function dateLabel(d: Date): string {
@@ -45,14 +49,14 @@ const AUTOR_INFO: Record<string, { label: string; Icon: typeof User; color: stri
   licitante: { label: 'Licitante',  Icon: User,           color: 'text-emerald-700 dark:text-emerald-300', bg: 'bg-emerald-500/10 border-emerald-500/30' },
 };
 
-export function LicitacaoMonitoramento({ licitacaoId, licitacaoNumero }: Props) {
+export function LicitacaoMonitoramento({ licitacaoId, licitacaoNumero, licitacaoObjeto, licitacaoOrgao, licitacaoValorEstimado }: Props) {
   const queryClient = useQueryClient();
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
   const [newCount, setNewCount] = useState(0);
 
-  const { data: mensagens, isLoading } = useQuery({
+  const { data: mensagensReais, isLoading } = useQuery({
     queryKey: ['licitacao-monitoramento', licitacaoId],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -64,6 +68,20 @@ export function LicitacaoMonitoramento({ licitacaoId, licitacaoNumero }: Props) 
       return (data || []) as Mensagem[];
     },
   });
+
+  // Sem mensagens reais na base, simula o chat da sessão pública a partir dos dados da licitação
+  const simulado = !isLoading && (!mensagensReais || mensagensReais.length === 0);
+  const mensagens: Mensagem[] | undefined = isLoading
+    ? undefined
+    : simulado
+      ? gerarMensagensMonitoramento({
+          licitacaoId,
+          numero: licitacaoNumero,
+          objeto: licitacaoObjeto,
+          orgao: licitacaoOrgao,
+          valorEstimado: licitacaoValorEstimado,
+        }) as Mensagem[]
+      : mensagensReais;
 
   // Realtime: novas mensagens chegam automaticamente
   useEffect(() => {
@@ -180,13 +198,20 @@ export function LicitacaoMonitoramento({ licitacaoId, licitacaoNumero }: Props) 
             </div>
           </CardContent>
         </Card>
-        <Badge variant="outline" className="gap-1.5 py-1.5 px-3">
-          <span className="relative flex h-2 w-2">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-500 opacity-75" />
-            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
-          </span>
-          <span className="text-xs font-medium">Tempo real</span>
-        </Badge>
+        {simulado ? (
+          <Badge variant="outline" className="gap-1.5 py-1.5 px-3 text-amber-600 border-amber-500/40 bg-amber-500/10">
+            <Bot className="h-3 w-3" />
+            <span className="text-xs font-medium">Sessão simulada</span>
+          </Badge>
+        ) : (
+          <Badge variant="outline" className="gap-1.5 py-1.5 px-3">
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-500 opacity-75" />
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+            </span>
+            <span className="text-xs font-medium">Tempo real</span>
+          </Badge>
+        )}
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>

@@ -20,6 +20,7 @@ import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 import { useAuth } from '@/contexts/AuthContext';
 import { ResponsaveisMultiSelect } from '@/components/tarefas/ResponsaveisMultiSelect';
 import { createTarefaWithNotifications } from '@/lib/tarefasService';
+import { sortEtapasForDisplay } from '@/lib/etapasOrder';
 import { EtapaEsclarecimento } from './etapas/EtapaEsclarecimento';
 import { EtapaAprovacoes } from './etapas/EtapaAprovacoes';
 import { EtapaDocumentos } from './etapas/EtapaDocumentos';
@@ -56,7 +57,7 @@ const ETAPAS_INFO: Record<string, {
     },
   },
   esclarecimento_impugnacao: {
-    nome: 'Esclarecimento / Recurso',
+    nome: 'Peças Jurídicas',
     icon: Scale,
     cor: '#8B5CF6',
     statusLabels: {
@@ -285,10 +286,15 @@ export function LicitacaoEtapasTimeline({ licitacaoId, clienteId, licitacaoData,
 
   const sortByConfig = (data: any[], cfgs: EtapaConfig[]): EtapaExecucao[] => {
     const orderMap = new Map(cfgs.map(c => [c.etapa_codigo, c.ordem]));
-    return data
+    const mapped = data
       .filter(d => d.etapa_codigo !== 'disputa_pregao')
-      .map(d => ({ ...d, dados: (d.dados as Record<string, unknown>) || {} }))
-      .sort((a, b) => (orderMap.get(a.etapa_codigo) ?? 999) - (orderMap.get(b.etapa_codigo) ?? 999));
+      .map(d => ({ ...d, dados: (d.dados as Record<string, unknown>) || {} }));
+    // Normaliza exibição para a ordem canônica quando o banco ainda tem a legada
+    return sortEtapasForDisplay(
+      mapped,
+      (d) => d.etapa_codigo,
+      (d) => orderMap.get(d.etapa_codigo) ?? 999
+    );
   };
 
   const getEtapaNome = (codigo: string): string => {
@@ -597,12 +603,22 @@ export function LicitacaoEtapasTimeline({ licitacaoId, clienteId, licitacaoData,
           <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-primary/10">
             <Radio className="h-5 w-5 text-primary" />
           </div>
-          <div className="flex-1">
+          <div className="flex-1 min-w-0">
             <h3 className="text-sm font-semibold">Monitoramento do Pregão</h3>
-            <p className="text-xs text-muted-foreground">Mensagens do chat da sessão pública capturadas em tempo real</p>
+            <p className="text-xs text-muted-foreground">
+              {licitacaoData?.objeto
+                ? `Objeto: ${licitacaoData.objeto}`
+                : 'Mensagens do chat da sessão pública capturadas em tempo real'}
+            </p>
           </div>
         </div>
-        <LicitacaoMonitoramento licitacaoId={licitacaoId} />
+        <LicitacaoMonitoramento
+          licitacaoId={licitacaoId}
+          licitacaoNumero={licitacaoData?.numero}
+          licitacaoObjeto={licitacaoData?.objeto}
+          licitacaoOrgao={licitacaoData?.orgao}
+          licitacaoValorEstimado={licitacaoData?.valor_estimado}
+        />
       </TabsContent>
 
       <TabsContent value="historico-atualizacoes" className="mt-0">

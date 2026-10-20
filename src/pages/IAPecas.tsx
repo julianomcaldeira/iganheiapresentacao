@@ -282,7 +282,7 @@ export default function IAPecas() {
                     <span className="text-xs text-muted-foreground">→</span>
                     <Badge variant="secondary" className="text-xs">
                       <Link to="/licitacoes" className="hover:underline">
-                        Aplicado em: Licitações → Esclarecimento/Recurso e Impugnação/Contrarrazão
+                        Aplicado em: Licitações → Peças Jurídicas e Impugnação/Contrarrazão
                       </Link>
                     </Badge>
                   </div>

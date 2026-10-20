@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { cn } from '@/lib/utils';
+import { sortEtapasForDisplay } from '@/lib/etapasOrder';
 import {
   Scale, CheckCircle, FolderOpen, DollarSign, Swords, Trophy, Layers, Loader2, 
   Brain, Users, Package, ListTodo, FileSignature, Receipt, Gavel
@@ -11,7 +12,7 @@ const ETAPAS_INFO: Record<string, {
   icon: typeof Scale;
 }> = {
   analise_edital: { nome: 'Análise IA', icon: Brain },
-  esclarecimento_impugnacao: { nome: 'Esclarecimento', icon: Scale },
+  esclarecimento_impugnacao: { nome: 'Peças Jurídicas', icon: Scale },
   impugnacao_contrarrazao: { nome: 'Impugnação', icon: Gavel },
   aprovacoes: { nome: 'Aprovações', icon: CheckCircle },
   concorrentes: { nome: 'Concorrentes', icon: Users },
@@ -46,11 +47,14 @@ export function LicitacaoProcessFlow({ licitacaoId, clienteId }: Props) {
       setConfigs(cfgs);
 
       const orderMap = new Map(cfgs.map((c: any) => [c.etapa_codigo, c.ordem]));
-      const sorted = (etaRes.data || [])
-        .filter((e: any) => e.etapa_codigo !== 'disputa_pregao')
-        .sort((a: any, b: any) =>
-          (orderMap.get(a.etapa_codigo) ?? 999) - (orderMap.get(b.etapa_codigo) ?? 999)
-        );
+      const raw = (etaRes.data || [])
+        .filter((e: any) => e.etapa_codigo !== 'disputa_pregao');
+      // Normaliza exibição para a ordem canônica quando o banco ainda tem a legada
+      const sorted = sortEtapasForDisplay(
+        raw,
+        (e: any) => e.etapa_codigo,
+        (e: any) => orderMap.get(e.etapa_codigo) ?? 999
+      );
       setEtapas(sorted);
       setLoading(false);
     };
