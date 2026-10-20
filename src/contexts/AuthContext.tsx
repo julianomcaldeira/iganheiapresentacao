@@ -1,6 +1,7 @@
-import { useEffect, useState, ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, ReactNode } from 'react';
 import type { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
+import { clearQueryCache } from '@/integrations/supabase/cachedFetch';
 import { AuthContext, type AppRole, type Profile, type ModulePermission } from './auth-context';
 
 export { useAuth } from './auth-context';
@@ -15,7 +16,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [permissions, setPermissions] = useState<ModulePermission[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const fetchProfile = async (userId: string) => {
+  const fetchPermissions = useCallback(async (perfilAcessoId: string) => {
+    const { data, error } = await supabase
+      .from('perfil_permissoes')
+      .select('modulo, pode_visualizar, pode_criar, pode_editar, pode_excluir')
+      .eq('perfil_id', perfilAcessoId);
+
+    if (!error && data) {
+      setPermissions(data as ModulePermission[]);
+    } else {
+      setPermissions([]);
+    }
+  }, []);
+
+  const fetchProfile = useCallback(async (userId: string) => {
     const { data, error } = await supabase
       .from('profiles')
       .select('*')
@@ -31,22 +45,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setPermissions([]);
       }
     }
-  };
+  }, [fetchPermissions]);
 
-  const fetchPermissions = async (perfilAcessoId: string) => {
-    const { data, error } = await supabase
-      .from('perfil_permissoes')
-      .select('modulo, pode_visualizar, pode_criar, pode_editar, pode_excluir')
-      .eq('perfil_id', perfilAcessoId);
-
-    if (!error && data) {
-      setPermissions(data as ModulePermission[]);
-    } else {
-      setPermissions([]);
-    }
-  };
-
-  const fetchRole = async (userId: string) => {
+  const fetchRole = useCallback(async (userId: string) => {
     const { data, error } = await supabase
       .from('user_roles')
       .select('role')
@@ -56,58 +57,93 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!error && data) {
       setRole(data.role as AppRole);
     }
-  };
+  }, []);
+
+  const loadedUserIdRef = useRef<string | null>(null);
+  const loadPromiseRef = useRef<Promise<void> | null>(null);
 
   useEffect(() => {
+    let cancelled = false;
+
+    // Carrega profile + role apenas quando o usuário realmente muda.
+    // Eventos de refresh de token NÃO devem derrubar a tela (loading global).
+    const loadUserData = (userId: string): Promise<void> => {
+      if (loadedUserIdRef.current === userId) return Promise.resolve();
+      if (loadPromiseRef.current) return loadPromiseRef.current;
+
+      setLoading(true);
+      const promise = Promise.all([
+        fetchProfile(userId),
+        fetchRole(userId),
+      ])
+        .then(() => {
+          if (!cancelled) loadedUserIdRef.current = userId;
+        })
+        .catch((err) => {
+          console.error('[Auth] profile/role fetch error:', err);
+        })
+        .finally(() => {
+          loadPromiseRef.current = null;
+          if (!cancelled) setLoading(false);
+        });
+
+      loadPromiseRef.current = promise;
+      return promise;
+    };
+
+    const clearUser = () => {
+      loadedUserIdRef.current = null;
+      setProfile(null);
+      setRole(null);
+      setPermissions([]);
+      setLoading(false);
+    };
+
     // Set up auth state listener FIRST
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, session) => {
         setSession(session);
         setUser(session?.user ?? null);
 
-        if (session?.user) {
-          setLoading(true);
-          // Defer to avoid deadlock; await both before clearing loading
-          setTimeout(async () => {
-            try {
-              await Promise.all([
-                fetchProfile(session.user.id),
-                fetchRole(session.user.id),
-              ]);
-            } catch (err) {
-              console.error('[Auth] profile/role fetch error:', err);
-            } finally {
-              setLoading(false);
-            }
-          }, 0);
-        } else {
-          setProfile(null);
-          setRole(null);
-          setPermissions([]);
-          setLoading(false);
+        if (!session?.user) {
+          clearUser();
+          return;
         }
+
+        // Token renovado em background: mantém tudo como está (sem reload)
+        if (event === 'TOKEN_REFRESHED') return;
+
+        if (event === 'SIGNED_OUT') {
+          clearUser();
+          clearQueryCache();
+          return;
+        }
+
+        // INITIAL_SESSION, SIGNED_IN, USER_UPDATED
+        void loadUserData(session.user.id);
       }
     );
 
     // THEN check for existing session
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       setUser(session?.user ?? null);
 
       if (session?.user) {
-        await Promise.all([
-          fetchProfile(session.user.id),
-          fetchRole(session.user.id),
-        ]);
+        void loadUserData(session.user.id);
+      } else {
+        setLoading(false);
       }
-      setLoading(false);
     }).catch((err) => {
       console.error('[Auth] getSession error:', err);
       setLoading(false);
     });
 
-    return () => subscription.unsubscribe();
-  }, []);
+    return () => {
+      cancelled = true;
+      subscription.unsubscribe();
+    };
+  }, [fetchProfile, fetchRole]);
 
   const signIn = async (email: string, password: string) => {
     const { error } = await supabase.auth.signInWithPassword({
@@ -125,6 +161,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setProfile(null);
     setRole(null);
     setPermissions([]);
+    loadedUserIdRef.current = null;
+    clearQueryCache();
 
     try {
       // scope 'local' evita erro 403 quando a sessão já não existe no servidor
@@ -138,7 +176,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       Object.keys(localStorage)
         .filter((k) => k.startsWith('sb-') && k.endsWith('-auth-token'))
         .forEach((k) => localStorage.removeItem(k));
-    } catch {}
+    } catch {
+      // ignora falhas de limpeza do storage
+    }
   };
 
   const updateProfile = async (updates: Partial<Profile>) => {

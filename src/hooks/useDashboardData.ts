@@ -56,64 +56,68 @@ export function useDashboardData(filters: DashboardFilters) {
           .from('clientes')
           .select('id', { count: 'exact' })
           .eq('ativo', true);
-        
+
         if (filters.clienteId) {
           clientesQuery = clientesQuery.eq('id', filters.clienteId);
         }
-        
-        const { count: clientesAtivos } = await clientesQuery;
 
         // Usuários ativos
         let usuariosQuery = supabase
           .from('profiles')
           .select('id', { count: 'exact' })
           .eq('ativo', true);
-        
+
         if (filters.clienteId) {
           usuariosQuery = usuariosQuery.eq('cliente_id', filters.clienteId);
         }
-        
-        const { count: usuariosAtivos } = await usuariosQuery;
 
         // Tarefas pendentes
         let tarefasPendentesQuery = supabase
           .from('tarefas')
           .select('id', { count: 'exact' })
           .in('status', ['pendente', 'em_andamento']);
-        
+
         if (filters.clienteId) {
           tarefasPendentesQuery = tarefasPendentesQuery.eq('cliente_id', filters.clienteId);
         }
-        
+
         if (filters.startDate) {
           tarefasPendentesQuery = tarefasPendentesQuery.gte('created_at', filters.startDate.toISOString());
         }
-        
+
         if (filters.endDate) {
           tarefasPendentesQuery = tarefasPendentesQuery.lte('created_at', filters.endDate.toISOString());
         }
-        
-        const { count: tarefasPendentes } = await tarefasPendentesQuery;
 
         // Tarefas concluídas
         let tarefasConcluidasQuery = supabase
           .from('tarefas')
           .select('id', { count: 'exact' })
           .eq('status', 'concluida');
-        
+
         if (filters.clienteId) {
           tarefasConcluidasQuery = tarefasConcluidasQuery.eq('cliente_id', filters.clienteId);
         }
-        
+
         if (filters.startDate) {
           tarefasConcluidasQuery = tarefasConcluidasQuery.gte('data_conclusao', filters.startDate.toISOString());
         }
-        
+
         if (filters.endDate) {
           tarefasConcluidasQuery = tarefasConcluidasQuery.lte('data_conclusao', filters.endDate.toISOString());
         }
-        
-        const { count: tarefasConcluidas } = await tarefasConcluidasQuery;
+
+        const [
+          { count: clientesAtivos },
+          { count: usuariosAtivos },
+          { count: tarefasPendentes },
+          { count: tarefasConcluidas },
+        ] = await Promise.all([
+          clientesQuery,
+          usuariosQuery,
+          tarefasPendentesQuery,
+          tarefasConcluidasQuery,
+        ]);
 
         setMetrics({
           clientesAtivos: clientesAtivos || 0,
