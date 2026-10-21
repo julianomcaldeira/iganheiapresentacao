@@ -38,6 +38,7 @@ import {
 import { aplicarCenariosAClientes } from '@/lib/cenariosCliente';
 import { aplicarCenariosPorEmpresa } from '@/lib/cenariosEmpresa';
 import { popularCertidoesEmpresas } from '@/lib/popularCertidoesEmpresas';
+import { aplicarStatusVariado } from '@/lib/aplicarStatusVariado';
 import { 
   Plus, Search, Trash2, Play, CheckCircle, Clock, AlertCircle, FileText, 
   Building2, Calendar, DollarSign, ChevronRight, X, Download, ThumbsUp, 
@@ -659,6 +660,32 @@ export default function LicitacoesPage() {
 
 
   /**
+   * Variar o status das licitações da base (demonstração dos status).
+   * Mostra o antes/depois da distribuição.
+   */
+  const handleVariarStatus = async () => {
+    setPopulando(true);
+    try {
+      const rel = await aplicarStatusVariado({ porEmpresa: true });
+      console.info('[Status Demo] Relatório:', rel);
+      const resumo = Object.entries(rel.depois)
+        .map(([k, v]) => `${k}: ${v}`)
+        .join(' | ');
+      if (rel.erros.length > 0) {
+        toast.error(`${rel.atualizados} atualizada(s), ${rel.erros.length} erro(s) — ${rel.erros[0]}`);
+      } else {
+        toast.success(`${rel.atualizados} licitações com status variado — ${resumo}`);
+      }
+      await fetchData();
+    } catch (e: any) {
+      console.error('[Status Demo] Erro:', e);
+      toast.error(e?.message || 'Erro ao variar os status');
+    } finally {
+      setPopulando(false);
+    }
+  };
+
+  /**
    * Prepara toda a base de demonstração:
    * 1. certidões de cada empresa (com uma vencida);
    * 2. cenário de execução distinto por empresa;
@@ -687,7 +714,11 @@ export default function LicitacoesPage() {
       const docs = await garantirDocumentosDeTodosOsClientes();
       console.info('[Base Demo] Documentos:', docs);
 
-      const erros = [...cert.erros, ...cen.erros, ...docs.erros, ...proc.erros];
+      // 5. Variedade de status na listagem
+      const status = await aplicarStatusVariado({ porEmpresa: true });
+      console.info('[Base Demo] Status:', status);
+
+      const erros = [...cert.erros, ...cen.erros, ...docs.erros, ...proc.erros, ...status.erros];
       if (erros.length > 0) {
         toast.error(`Base preparada com ${erros.length} erro(s) — ${erros[0]}`);
       } else {
@@ -1437,6 +1468,10 @@ export default function LicitacoesPage() {
                   <DropdownMenuItem onClick={handlePrepararBaseDemo}>
                     <Sparkles className="h-4 w-4 mr-2" />
                     Preparar base de demonstração (certidões + cenário por empresa)
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={handleVariarStatus}>
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                    Variar status das licitações (demo)
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={handleAplicarCenarios}>
                     <Sparkles className="h-4 w-4 mr-2" />

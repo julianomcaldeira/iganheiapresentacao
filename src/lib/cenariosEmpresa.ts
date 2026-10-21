@@ -204,10 +204,13 @@ export async function aplicarCenariosPorEmpresa(
         relatorio.etapasAplicadas += aplicou.etapas;
         relatorio.resultados += aplicou.resultados;
         if (lic) {
-          await supabase
+          const { error: statusErr } = await supabase
             .from('licitacoes')
             .update({ status: PERFIS_EMPRESA[empresa.perfil].statusLicitacao })
             .eq('id', licId);
+          if (statusErr) {
+            relatorio.erros.push(`status ${lic.numero}: ${statusErr.message}`);
+          }
         }
       }
     }
