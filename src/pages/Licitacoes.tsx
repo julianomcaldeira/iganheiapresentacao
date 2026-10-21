@@ -67,7 +67,7 @@ interface Licitacao {
   status: string;
   relevancia: string;
   portal: string;
-  workflow_id: string;
+  workflow_id: string | null;
   etapa_atual_id: string | null;
   cliente_id: string;
   empresa_id: string | null;
@@ -80,7 +80,6 @@ interface Licitacao {
   analise_ia_data?: string | null;
 }
 
-interface Workflow { id: string; nome: string; }
 interface Etapa { id: string; nome: string; ordem: number; cor: string; prazo_dias: number | null; descricao: string | null; }
 interface Campo { id: string; nome: string; label: string; tipo: string; obrigatorio: boolean; opcoes: string[] | null; valor_padrao: string | null; }
 interface LicitacaoEtapa { id: string; etapa_id: string; status: string; }
@@ -101,7 +100,6 @@ const STATUS_OPTIONS = [
 export default function LicitacoesPage() {
   const { profile, isAdmin } = useAuth();
   const [licitacoes, setLicitacoes] = useState<Licitacao[]>([]);
-  const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [empresas, setEmpresas] = useState<Empresa[]>([]);
   const [produtos, setProdutos] = useState<Produto[]>([]);
   const [declaracaoTemplates, setDeclaracaoTemplates] = useState<DeclaracaoTemplate[]>([]);
@@ -494,7 +492,6 @@ export default function LicitacoesPage() {
         .from('licitacoes')
         .select('*, workflow:licitacao_workflows(nome), etapa_atual:workflow_etapas!licitacoes_etapa_atual_id_fkey(nome, cor), cliente:clientes(nome)');
       
-      let workflowsQuery = supabase.from('licitacao_workflows').select('id, nome').eq('ativo', true);
       let empresasQuery = supabase.from('empresas').select('id, razao_social, cnpj').eq('ativo', true);
       let produtosQuery = supabase.from('produtos').select('*').eq('ativo', true);
       let templatesQuery = supabase.from('declaracoes_templates').select('*').eq('ativo', true);
@@ -502,22 +499,19 @@ export default function LicitacoesPage() {
       // Apply cliente filter for non-admin users
       if (clienteId && !isAdmin) {
         licitacoesQuery = licitacoesQuery.eq('cliente_id', clienteId);
-        workflowsQuery = workflowsQuery.eq('cliente_id', clienteId);
         empresasQuery = empresasQuery.eq('cliente_id', clienteId);
         produtosQuery = produtosQuery.eq('cliente_id', clienteId);
         templatesQuery = templatesQuery.eq('cliente_id', clienteId);
       }
       
-      const [lRes, wRes, eRes, pRes, dRes] = await Promise.all([
+      const [lRes, eRes, pRes, dRes] = await Promise.all([
         licitacoesQuery.order('created_at', { ascending: false }),
-        workflowsQuery,
         empresasQuery,
         produtosQuery,
         templatesQuery,
       ]);
       
       if (lRes.data) setLicitacoes(lRes.data as unknown as Licitacao[]);
-      if (wRes.data) setWorkflows(wRes.data);
       if (eRes.data) setEmpresas(eRes.data);
       if (pRes.data) setProdutos(pRes.data as Produto[]);
       if (dRes.data) setDeclaracaoTemplates(dRes.data as DeclaracaoTemplate[]);
@@ -559,7 +553,9 @@ export default function LicitacoesPage() {
     setSelectedEtapaId(null);
     
     const [eRes, leRes, pRes, kwRes] = await Promise.all([
-      supabase.from('workflow_etapas').select('*').eq('workflow_id', lic.workflow_id).order('ordem'),
+      lic.workflow_id
+        ? supabase.from('workflow_etapas').select('*').eq('workflow_id', lic.workflow_id).order('ordem')
+        : Promise.resolve({ data: [] as unknown[] }),
       supabase.from('licitacao_etapas').select('*').eq('licitacao_id', lic.id),
       supabase.from('licitacao_produtos').select('*').eq('licitacao_id', lic.id).order('item_numero'),
       supabase.from('clientes').select('palavras_positivas, palavras_negativas').eq('id', lic.cliente_id).single(),
@@ -635,8 +631,13 @@ export default function LicitacoesPage() {
   };
 
   const handleCreateLicitacao = async () => {
-    if (!newLicitacao.numero || !newLicitacao.objeto || !newLicitacao.orgao || !newLicitacao.workflow_id) {
+    if (!newLicitacao.numero || !newLicitacao.objeto || !newLicitacao.orgao) {
       toast.error('Preencha campos obrigatórios');
+      return;
+    }
+
+    if (!profile?.cliente_id) {
+      toast.error('Perfil sem cliente associado. Não é possível criar licitação.');
       return;
     }
 
@@ -664,16 +665,35 @@ export default function LicitacoesPage() {
       editalUrl = signed?.signedUrl || null;
     }
 
-    const { data: pe } = await supabase
-      .from('workflow_etapas')
-      .select('id')
-      .eq('workflow_id', newLicitacao.workflow_id)
-      .order('ordem')
-      .limit(1)
-      .maybeSingle();
+    // Atribui automaticamente o primeiro workflow ativo do cliente (compatibilidade legada)
+    let workflowId = newLicitacao.workflow_id || null;
+    if (!workflowId) {
+      const { data: wf } = await supabase
+        .from('licitacao_workflows')
+        .select('id')
+        .eq('cliente_id', profile.cliente_id)
+        .eq('ativo', true)
+        .order('created_at')
+        .limit(1)
+        .maybeSingle();
+      workflowId = wf?.id || null;
+    }
+
+    // Primeira etapa legada (compatibilidade com detalhe antigo)
+    let primeiraEtapaId: string | null = null;
+    if (workflowId) {
+      const { data: pe } = await supabase
+        .from('workflow_etapas')
+        .select('id')
+        .eq('workflow_id', workflowId)
+        .order('ordem')
+        .limit(1)
+        .maybeSingle();
+      primeiraEtapaId = pe?.id || null;
+    }
 
     const { data, error } = await supabase.from('licitacoes').insert({
-      cliente_id: profile?.cliente_id,
+      cliente_id: profile.cliente_id,
       numero: newLicitacao.numero,
       objeto: newLicitacao.objeto,
       orgao: newLicitacao.orgao,
@@ -686,9 +706,9 @@ export default function LicitacoesPage() {
       data_retirada: newLicitacao.data_retirada || null,
       data_visita: newLicitacao.data_visita || null,
       data_prazo: newLicitacao.data_prazo || null,
-      workflow_id: newLicitacao.workflow_id,
+      workflow_id: workflowId,
       empresa_id: newLicitacao.empresa_id || null,
-      etapa_atual_id: pe?.id || null,
+      etapa_atual_id: primeiraEtapaId,
       relevancia: newLicitacao.relevancia,
       portal: newLicitacao.portal || 'Manual',
       uasg: newLicitacao.uasg || null,
@@ -709,14 +729,22 @@ export default function LicitacoesPage() {
       toast.error(error.message);
       setUploadingNovoEdital(false);
     } else {
-      const { data: ae } = await supabase.from('workflow_etapas').select('id').eq('workflow_id', newLicitacao.workflow_id).order('ordem');
-      if (ae && data) {
-        await supabase.from('licitacao_etapas').insert(ae.map((e, i) => ({
-          licitacao_id: data.id,
-          etapa_id: e.id,
-          status: i === 0 ? 'em_andamento' : 'pendente'
-        })));
+      // Etapas legadas (compatibilidade com detalhe antigo)
+      if (workflowId && data) {
+        const { data: ae } = await supabase.from('workflow_etapas').select('id').eq('workflow_id', workflowId).order('ordem');
+        if (ae && ae.length > 0) {
+          await supabase.from('licitacao_etapas').insert(ae.map((e, i) => ({
+            licitacao_id: data.id,
+            etapa_id: e.id,
+            status: i === 0 ? 'em_andamento' : 'pendente'
+          })));
+        }
       }
+      // Etapas do novo modelo (LicitacaoProcessFlow / LicitacaoEtapasTimeline)
+      await supabase.rpc('inicializar_etapas_licitacao', {
+        p_licitacao_id: data.id,
+        p_cliente_id: profile.cliente_id,
+      });
       toast.success('Licitação criada! Status: Pendente de Análise');
       fetchData();
       setShowNewDialog(false);
@@ -1067,7 +1095,7 @@ export default function LicitacoesPage() {
               </DropdownMenu>
               
               
-              <Button onClick={() => setShowNewDialog(true)} disabled={!workflows.length} data-page-new-action>
+              <Button onClick={() => setShowNewDialog(true)} data-page-new-action>
                 <Plus className="h-4 w-4 mr-2" />Nova Licitação
               </Button>
             </div>
@@ -1210,16 +1238,6 @@ export default function LicitacoesPage() {
           </Collapsible>
         </div>
 
-        {!workflows.length && (
-          <Card className="border-dashed">
-            <CardContent className="py-8 text-center">
-              <AlertCircle className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-              <p className="font-medium">Nenhum workflow configurado</p>
-              <p className="text-sm text-muted-foreground mt-1">Configure um workflow de licitação em Configurações</p>
-            </CardContent>
-          </Card>
-        )}
-
         {/* Indicador de filtros de coluna */}
         {activeColumnFilterCount > 0 && (
           <div className="flex items-center gap-2">
@@ -1262,7 +1280,7 @@ export default function LicitacoesPage() {
           getStatusConfig={getStatusConfig}
         />
 
-        {filteredLicitacoes.length === 0 && workflows.length > 0 && (
+        {filteredLicitacoes.length === 0 && (
           <Card className="border-dashed">
             <CardContent className="py-12 text-center">
               <FileText className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
@@ -1297,13 +1315,6 @@ export default function LicitacoesPage() {
                 <div>
                   <Label>Número / Edital *</Label>
                   <Input value={newLicitacao.numero} onChange={e => setNewLicitacao({...newLicitacao, numero: e.target.value})} />
-                </div>
-                <div>
-                  <Label>Workflow *</Label>
-                  <Select value={newLicitacao.workflow_id} onValueChange={v => setNewLicitacao({...newLicitacao, workflow_id: v})}>
-                    <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
-                    <SelectContent>{workflows.map(w => <SelectItem key={w.id} value={w.id}>{w.nome}</SelectItem>)}</SelectContent>
-                  </Select>
                 </div>
                 <div>
                   <Label>Processo</Label>

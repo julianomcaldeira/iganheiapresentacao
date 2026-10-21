@@ -3450,7 +3450,7 @@ export type Database = {
           updated_at: string
           valor_estimado: number | null
           versao_atual: number
-          workflow_id: string
+          workflow_id: string | null
         }
         Insert: {
           analise_ia?: Json | null
@@ -3544,7 +3544,7 @@ export type Database = {
           updated_at?: string
           valor_estimado?: number | null
           versao_atual?: number
-          workflow_id?: string
+          workflow_id?: string | null
         }
         Relationships: [
           {

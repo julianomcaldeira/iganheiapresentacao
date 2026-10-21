@@ -56,7 +56,7 @@ interface Licitacao {
   status: string;
   relevancia: string;
   portal: string;
-  workflow_id: string;
+  workflow_id: string | null;
   etapa_atual_id: string | null;
   cliente_id: string;
   empresa_id: string | null;
