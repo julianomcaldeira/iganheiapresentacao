@@ -29,7 +29,7 @@ import { LicitacaoEtapasTimeline } from '@/components/licitacoes/LicitacaoEtapas
 import { LicitacaoProcessFlow } from '@/components/licitacoes/LicitacaoProcessFlow';
 import { ensureEtapasEmLote } from '@/lib/ensureEtapas';
 import { popularProcessoLicitatorio, popularExemplosPendentes } from '@/lib/popularProcessoLicitatorio';
-import { garantirDocumentosLicitacao } from '@/lib/garantirDocumentosLicitacao';
+import { garantirDocumentosDeTodosOsClientes } from '@/lib/garantirDocumentosLicitacao';
 import { 
   Plus, Search, Trash2, Play, CheckCircle, Clock, AlertCircle, FileText, 
   Building2, Calendar, DollarSign, ChevronRight, X, Download, ThumbsUp, 
@@ -579,23 +579,20 @@ export default function LicitacoesPage() {
       }
       
       // Garante a listagem de documentos nas seções da aba Documentos
-      // (CNDs, Atestados, Declarações, Outros) das licitações da base
+      // (CNDs, Atestados, Declarações, Outros) para TODOS os clientes
       if (licIds.length > 0) {
         try {
-          const relDocs = await garantirDocumentosLicitacao(
-            (lRes.data || []).map((l: any) => ({
-              id: l.id,
-              cliente_id: l.cliente_id as string | null,
-            }))
-          );
-          if (relDocs.documentosInseridos > 0 || relDocs.documentosReclassificados > 0 || relDocs.etapasAtualizadas.length > 0) {
-            console.info('[Documentos] Relatório:', {
-              licitacoesSemDocumentos: relDocs.licitacoesSemDocumentos.length,
-              documentosInseridos: relDocs.documentosInseridos,
-              documentosReclassificados: relDocs.documentosReclassificados,
-              etapasAtualizadas: relDocs.etapasAtualizadas.length,
-              erros: relDocs.erros,
-            });
+          const relDocs = await garantirDocumentosDeTodosOsClientes();
+          console.info('[Documentos] Relatório:', {
+            clientes: relDocs.clientes,
+            licitacoes: relDocs.licitacoes,
+            basePorCliente: relDocs.basePorCliente,
+            documentosInseridos: relDocs.documentosInseridos,
+            documentosReclassificados: relDocs.documentosReclassificados,
+            etapasAtualizadas: relDocs.etapasAtualizadas,
+            erros: relDocs.erros,
+          });
+          if (relDocs.documentosInseridos > 0 || relDocs.documentosReclassificados > 0 || relDocs.etapasAtualizadas > 0) {
             setRefreshToken((t) => t + 1);
           }
           if (relDocs.erros.length > 0) {
@@ -644,6 +641,34 @@ export default function LicitacoesPage() {
     setLoading(false);
   };
 
+
+  /**
+   * Sincroniza a base de documentos (CNDs, Atestados, Declarações, Outros)
+   * de TODOS os clientes da plataforma para as suas licitações.
+   */
+  const handleSincronizarBaseDocumentos = async () => {
+    setPopulando(true);
+    try {
+      const rel = await garantirDocumentosDeTodosOsClientes();
+      console.info('[Documentos] Sincronização de todos os clientes:', rel);
+      if (rel.erros.length > 0) {
+        toast.error(
+          `Base sincronizada com ${rel.erros.length} erro(s) — ${rel.erros[0]}`
+        );
+      } else {
+        toast.success(
+          `Base sincronizada — ${rel.clientes} cliente(s), ${rel.licitacoes} licitação(ões), ${rel.documentosInseridos} documento(s) inserido(s), ${rel.documentosReclassificados} reclassificado(s)`
+        );
+      }
+      setRefreshToken((t) => t + 1);
+      await fetchData();
+    } catch (e: any) {
+      console.error('[Documentos] Erro ao sincronizar base:', e);
+      toast.error(e?.message || 'Erro ao sincronizar a base de documentos');
+    } finally {
+      setPopulando(false);
+    }
+  };
 
   /**
    * Popula o Processo Licitatório com dados de exemplo (todas as etapas
@@ -1266,6 +1291,11 @@ export default function LicitacoesPage() {
                       Popular {selectedLicitacao.numero}
                     </DropdownMenuItem>
                   )}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={handleSincronizarBaseDocumentos}>
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                    Sincronizar base de documentos (todos os clientes)
+                  </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
 

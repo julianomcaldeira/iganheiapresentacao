@@ -7,9 +7,10 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import {
   FileText, Plus, CheckCircle, AlertCircle, Loader2, Trash2, Download,
-  Globe, ClipboardList, FileCheck, FolderOpen, ChevronDown, ChevronRight
+  Globe, ClipboardList, FileCheck, FolderOpen, ChevronDown, ChevronRight, RefreshCw
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { garantirDocumentosLicitacao } from '@/lib/garantirDocumentosLicitacao';
 
 interface DocumentoChecklist {
   id: string;
@@ -47,10 +48,35 @@ export function DocumentosTab({ licitacaoId, clienteId, declaracaoTemplates, gen
   const [novoDoc, setNovoDoc] = useState('');
   const [novaCategoria, setNovaCategoria] = useState('cnd');
   const [expandedCats, setExpandedCats] = useState<Record<string, boolean>>({ cnd: true, atestado: true, declaracao: true, outro: true });
+  const [sincronizando, setSincronizando] = useState(false);
 
   useEffect(() => {
     fetchDocumentos();
   }, [licitacaoId]);
+
+  /** Sincroniza a base de documentos do cliente nesta licitação. */
+  const handleSincronizar = async () => {
+    setSincronizando(true);
+    try {
+      const rel = await garantirDocumentosLicitacao([
+        { id: licitacaoId, cliente_id: clienteId },
+      ]);
+      console.info('[Documentos] Sincronização manual:', rel);
+      if (rel.erros.length > 0) {
+        toast.error(`Falha ao sincronizar: ${rel.erros[0]}`);
+      } else {
+        toast.success(
+          `Base sincronizada — ${rel.documentosInseridos} documento(s) inserido(s), ${rel.documentosReclassificados} reclassificado(s)`
+        );
+      }
+      await fetchDocumentos();
+    } catch (e: any) {
+      console.error('[Documentos] Erro na sincronização:', e);
+      toast.error(e?.message || 'Erro ao sincronizar a base de documentos');
+    } finally {
+      setSincronizando(false);
+    }
+  };
 
   const fetchDocumentos = async () => {
     const { data } = await supabase
@@ -119,7 +145,31 @@ export function DocumentosTab({ licitacaoId, clienteId, declaracaoTemplates, gen
             <span className="text-muted-foreground">não disponível(is) — providenciar</span>
           </div>
         </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleSincronizar}
+          disabled={sincronizando}
+          title="Sincronizar a base de documentos do cliente nesta licitação"
+        >
+          {sincronizando ? (
+            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+          ) : (
+            <RefreshCw className="h-4 w-4 mr-2" />
+          )}
+          Sincronizar base
+        </Button>
       </div>
+
+      {documentos.length === 0 && (
+        <div className="flex items-center gap-2 rounded-lg border border-amber-300/60 bg-amber-50 dark:bg-amber-950/30 px-4 py-3 text-sm text-amber-800 dark:text-amber-200">
+          <AlertCircle className="h-4 w-4 shrink-0" />
+          <span className="flex-1">
+            Nenhum documento na listagem desta licitação. Clique em “Sincronizar base” para
+            importar a base de documentos do cliente.
+          </span>
+        </div>
+      )}
 
       {/* Add document */}
       <div className="flex gap-2">

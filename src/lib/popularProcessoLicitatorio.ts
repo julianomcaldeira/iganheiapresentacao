@@ -50,21 +50,32 @@ async function limparExemplo(licitacaoId: string, erros: string[]) {
     ['licitacao_pecas', 'licitacao_id'],
     ['licitacao_concorrentes', 'licitacao_id'],
     ['licitacao_produtos', 'licitacao_id'],
-    ['licitacao_documentos_checklist', 'licitacao_id'],
     ['licitacao_resultado_itens', 'licitacao_id'],
     ['licitacao_fluxo_aprovacao', 'licitacao_id'],
     ['licitacao_mensagens_internas', 'licitacao_id'],
     ['licitacao_monitoramento_mensagens', 'licitacao_id'],
   ];
+  // NOTA: licitacao_documentos_checklist NÃO é apagado — a base de documentos
+  // do cliente é replicada nas licitações e deve ser preservada.
   for (const [tabela, coluna] of tabelas) {
     const { error } = await supabase.from(tabela).delete().eq(coluna, licitacaoId);
     if (error) erros.push(`limpeza ${tabela}: ${error.message}`);
   }
-  // Empenhos e contratos (tabela compartilhada) e tarefas
+  // Empenhos e tarefas
   const { error: eErr } = await supabase.from('empenhos').delete().eq('licitacao_id', licitacaoId);
   if (eErr) erros.push(`limpeza empenhos: ${eErr.message}`);
   const { error: tErr } = await supabase.from('tarefas').delete().eq('licitacao_id', licitacaoId);
   if (tErr) erros.push(`limpeza tarefas: ${tErr.message}`);
+}
+
+/** Normaliza o nome do documento para comparação. */
+function normNome(nome: string): string {
+  return (nome || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
 }
 
 export async function popularProcessoLicitatorio(
@@ -441,22 +452,31 @@ export async function popularProcessoLicitatorio(
   }
 
   // ===== 7. Documentos por seção (CNDs, Atestados, Declarações, Outros) =====
+  // Mescla: não duplica documentos que já existam na licitação (base do cliente)
   {
     const docs = gerarDocumentosChecklist(ctx, templatesCliente.map((t) => t.nome));
-    const rows = docs.map((d) => ({
-      ...d,
-      licitacao_id: licitacaoId,
-      verificado_por: d.status === 'concluido' ? perfis[0]?.id ?? null : null,
-      verificado_em: d.status === 'concluido' ? dataAprov(6) : null,
-    }));
-    const { error } = await supabase.from('licitacao_documentos_checklist').insert(rows);
-    if (error) erros.push(`licitacao_documentos_checklist: ${error.message}`);
-    else {
-      tabelas.licitacao_documentos_checklist = rows.length;
-      // Breakdown por seção (para o relatório)
-      const porSecao: Record<string, number> = {};
-      rows.forEach((r) => { porSecao[r.categoria] = (porSecao[r.categoria] || 0) + 1; });
-      documentosPorSecao = porSecao;
+    const { data: existentes } = await supabase
+      .from('licitacao_documentos_checklist')
+      .select('nome')
+      .eq('licitacao_id', licitacaoId);
+    const nomesExistentes = new Set((existentes || []).map((d: any) => normNome(d.nome)));
+    const aInserir = docs.filter((d) => !nomesExistentes.has(normNome(d.nome)));
+
+    if (aInserir.length > 0) {
+      const rows = aInserir.map((d) => ({
+        ...d,
+        licitacao_id: licitacaoId,
+        verificado_por: d.status === 'concluido' ? perfis[0]?.id ?? null : null,
+        verificado_em: d.status === 'concluido' ? dataAprov(6) : null,
+      }));
+      const { error } = await supabase.from('licitacao_documentos_checklist').insert(rows);
+      if (error) erros.push(`licitacao_documentos_checklist: ${error.message}`);
+      else {
+        tabelas.licitacao_documentos_checklist = rows.length;
+        const porSecao: Record<string, number> = {};
+        rows.forEach((r) => { porSecao[r.categoria] = (porSecao[r.categoria] || 0) + 1; });
+        documentosPorSecao = porSecao;
+      }
     }
   }
 
