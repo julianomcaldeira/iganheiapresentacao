@@ -142,7 +142,11 @@ export interface EmpresaCenario {
  * informadas (por padrão, todas as empresas dos clientes ativos).
  */
 export async function aplicarCenariosPorEmpresa(
-  opts: { clienteId?: string } = {}
+  opts: {
+    clienteId?: string;
+    /** Perfil manual por empresa (tem prioridade sobre o automático) */
+    perfisPorEmpresa?: Record<string, PerfilEmpresa>;
+  } = {}
 ): Promise<RelatorioCenariosEmpresa> {
   const relatorio: RelatorioCenariosEmpresa = {
     empresas: 0,
@@ -188,7 +192,7 @@ export async function aplicarCenariosPorEmpresa(
       id: e.id,
       razao_social: e.nome_fantasia || e.razao_social,
       cliente_id: e.cliente_id,
-      perfil: perfilDaEmpresa(i),
+      perfil: opts.perfisPorEmpresa?.[e.id] || perfilDaEmpresa(i),
       licitacoes: (licPorEmpresa.get(e.id) || []).map((l: any) => l.id),
     }));
 

@@ -46,6 +46,7 @@ import {
   RefreshCw,
   Link2,
   ShieldCheck,
+  Sparkles,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
@@ -54,6 +55,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { WorkflowBuilder } from '@/components/workflows/WorkflowBuilder';
 import { AprovacaoConfigManager } from '@/components/clientes/AprovacaoConfigManager';
 import { useTaskGISync } from '@/hooks/useTaskGISync';
+import { BaseDemoConfigPanel } from '@/components/configuracoes/BaseDemoConfigPanel';
 
 export default function Configuracoes() {
   const { user, profile, updateProfile, role, isAdmin } = useAuth();
@@ -250,6 +252,10 @@ export default function Configuracoes() {
           <TabsTrigger value="integracoes" className="rounded-lg data-[state=active]:bg-background">
             <Link2 className="w-4 h-4 mr-2" />
             Integrações
+          </TabsTrigger>
+          <TabsTrigger value="base-demo" className="rounded-lg data-[state=active]:bg-background">
+            <Sparkles className="w-4 h-4 mr-2" />
+            Base Demo
           </TabsTrigger>
         </TabsList>
 
@@ -911,6 +917,11 @@ export default function Configuracoes() {
               </CardContent>
             </Card>
           </div>
+        </TabsContent>
+
+        {/* Base Demo Tab */}
+        <TabsContent value="base-demo">
+          <BaseDemoConfigPanel />
         </TabsContent>
       </Tabs>
     </MainLayout>

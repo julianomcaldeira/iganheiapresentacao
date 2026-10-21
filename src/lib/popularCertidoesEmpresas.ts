@@ -54,7 +54,7 @@ function dataRelativa(dias: number): string {
  * @param opts.clienteId limita a um cliente específico
  */
 export async function popularCertidoesEmpresas(
-  opts: { clienteId?: string; porEmpresa?: number } = {}
+  opts: { clienteId?: string; porEmpresa?: number; incluirVencida?: boolean } = {}
 ): Promise<RelatorioCertidoes> {
   const relatorio: RelatorioCertidoes = {
     empresas: 0,
@@ -98,7 +98,9 @@ export async function popularCertidoesEmpresas(
       await supabase.from('idocumentei_documentos').delete().in('id', idsDemo);
     }
 
-    const modelos = MODELOS.slice(0, porEmpresa);
+    const modelos = MODELOS.slice(0, porEmpresa).filter((m) =>
+      opts.incluirVencida === false ? m.status !== 'vencido' : true
+    );
     const rows = modelos.map((m) => {
       const validade = dataRelativa(m.diasValidade);
       const emissao = dataRelativa(m.diasValidade - 60);

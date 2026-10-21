@@ -1497,52 +1497,6 @@ export default function LicitacoesPage() {
               </DropdownMenu>
               
               
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="outline" disabled={populando}>
-                    {populando ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Sparkles className="h-4 w-4 mr-2" />}
-                    Popular Exemplo
-                    <ChevronDown className="h-4 w-4 ml-2" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={() => handlePopularExemplo()}>
-                    <Sparkles className="h-4 w-4 mr-2" />
-                    Popular todas as licitações da lista
-                  </DropdownMenuItem>
-                  {selectedLicitacao && (
-                    <DropdownMenuItem onClick={() => handlePopularExemplo(selectedLicitacao.id)}>
-                      <Sparkles className="h-4 w-4 mr-2" />
-                      Popular {selectedLicitacao.numero}
-                    </DropdownMenuItem>
-                  )}
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={handlePrepararBaseDemo}>
-                    <Sparkles className="h-4 w-4 mr-2" />
-                    Preparar base de demonstração (certidões + cenário por empresa)
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={handleVariarStatus}>
-                    <RefreshCw className="h-4 w-4 mr-2" />
-                    Variar status das licitações (demo)
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={handleDiagnosticarStatus}>
-                    <AlertCircle className="h-4 w-4 mr-2" />
-                    Diagnosticar gravação de status
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={handleAplicarCenarios}>
-                    <Sparkles className="h-4 w-4 mr-2" />
-                    Aplicar cenário diferente por cliente
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={handleAbrirOrganizacao}>
-                    <Users className="h-4 w-4 mr-2" />
-                    Organizar base: distribuir licitações entre os clientes
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={handleSincronizarBaseDocumentos}>
-                    <RefreshCw className="h-4 w-4 mr-2" />
-                    Sincronizar base de documentos (todos os clientes)
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
 
               <Button onClick={() => setShowNewDialog(true)} data-page-new-action>
                 <Plus className="h-4 w-4 mr-2" />Nova Licitação
@@ -2116,16 +2070,6 @@ export default function LicitacoesPage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handlePopularExemplo(selectedLicitacao.id)}
-                      disabled={populando}
-                      title="Preencher todas as etapas do processo com dados de exemplo"
-                    >
-                      {populando ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Sparkles className="h-4 w-4 mr-2" />}
-                      Popular Exemplo
-                    </Button>
                     {/* Size presets */}
                     <div className="flex items-center gap-1 border rounded-lg p-0.5 bg-muted/50">
                       {(Object.entries(dialogSizeConfig) as [DialogSizePreset, typeof dialogSizeConfig[DialogSizePreset]][]).map(([key, config]) => (
