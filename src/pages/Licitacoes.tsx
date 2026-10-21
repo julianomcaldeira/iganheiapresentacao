@@ -27,6 +27,7 @@ import { LicitacoesList, SortConfig } from '@/components/licitacoes/LicitacoesLi
 import { ColumnFilterValue, EMPTY_COLUMN_FILTER, isColumnFilterActive } from '@/components/ui/column-filter-head';
 import { LicitacaoEtapasTimeline } from '@/components/licitacoes/LicitacaoEtapasTimeline';
 import { LicitacaoProcessFlow } from '@/components/licitacoes/LicitacaoProcessFlow';
+import { ensureEtapasEmLote } from '@/lib/ensureEtapas';
 import { 
   Plus, Search, Trash2, Play, CheckCircle, Clock, AlertCircle, FileText, 
   Building2, Calendar, DollarSign, ChevronRight, X, Download, ThumbsUp, 
@@ -533,6 +534,48 @@ export default function LicitacoesPage() {
         setLicitacoesResultados(agg);
       } else {
         setLicitacoesResultados({});
+      }
+
+      // Inicializa etapas das licitações que ainda não têm esteira
+      // (usa só a config ativa do cliente; não inventa etapas)
+      if (licIds.length > 0) {
+        try {
+          const { data: execRows } = await supabase
+            .from('licitacao_etapa_execucao')
+            .select('licitacao_id')
+            .in('licitacao_id', licIds);
+          const jaInicializadas = new Set((execRows || []).map((r: any) => r.licitacao_id));
+          const pendentes = (lRes.data || [])
+            .map((l: any) => ({ id: l.id, cliente_id: l.cliente_id as string | null }))
+            .filter((l: any) => !jaInicializadas.has(l.id));
+          if (pendentes.length > 0) {
+            const report = await ensureEtapasEmLote(pendentes);
+            console.info('[Etapas] Relatório de inicialização em lote:', {
+              totalPendentes: pendentes.length,
+              populadas: report.populadas.length,
+              semConfig: report.semConfig.length,
+              bloqueadas: report.bloqueadas,
+              detalhe: report,
+            });
+            if (report.populadas.length > 0) {
+              toast.success(
+                `${report.populadas.length} licitação(ões) receberam a esteira de etapas`
+              );
+            }
+            if (report.semConfig.length > 0) {
+              toast.warning(
+                `${report.semConfig.length} licitação(ões) sem etapas ativas no cliente — configure em Clientes → Etapas & Regras`
+              );
+            }
+            if (report.bloqueadas.length > 0) {
+              toast.error(
+                `${report.bloqueadas.length} licitação(ões) com falha de permissão ao gravar etapas (ver console)`
+              );
+            }
+          }
+        } catch (e) {
+          console.warn('[Etapas] Erro no batch de inicialização:', e);
+        }
       }
       
       // Load clientes for admin filter

@@ -21,6 +21,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { ResponsaveisMultiSelect } from '@/components/tarefas/ResponsaveisMultiSelect';
 import { createTarefaWithNotifications } from '@/lib/tarefasService';
 import { sortEtapasForDisplay } from '@/lib/etapasOrder';
+import { ensureEtapasInicializadas } from '@/lib/ensureEtapas';
 import { EtapaEsclarecimento } from './etapas/EtapaEsclarecimento';
 import { EtapaAprovacoes } from './etapas/EtapaAprovacoes';
 import { EtapaDocumentos } from './etapas/EtapaDocumentos';
@@ -231,6 +232,7 @@ export function LicitacaoEtapasTimeline({ licitacaoId, clienteId, licitacaoData,
   const [loading, setLoading] = useState(true);
   const [selectedEtapa, setSelectedEtapa] = useState<string | null>(null);
   const [showChatPanel, setShowChatPanel] = useState(false);
+  const [semConfig, setSemConfig] = useState(false);
 
   useEffect(() => {
     fetchEtapas();
@@ -252,33 +254,21 @@ export function LicitacaoEtapasTimeline({ licitacaoId, clienteId, licitacaoData,
     }));
     setConfigs(parsedConfigs);
 
-    const { data: existingEtapas } = await supabase
-      .from('licitacao_etapa_execucao')
-      .select('*')
-      .eq('licitacao_id', licitacaoId);
+    // Inicializa via RPC se necessário (usa só a config do cliente; nunca inventa etapas)
+    const init = await ensureEtapasInicializadas(licitacaoId, clienteId);
+    setSemConfig(init.origem === 'semConfig');
+    if (init.origem === 'rpc') {
+      toast.success('Etapas da licitação inicializadas');
+    } else if (init.origem === 'erro') {
+      toast.error(`Falha ao inicializar etapas: ${init.permissaoBloqueada}`);
+    }
 
-    if (!existingEtapas || existingEtapas.length === 0) {
-      await supabase.rpc('inicializar_etapas_licitacao', {
-        p_licitacao_id: licitacaoId,
-        p_cliente_id: clienteId,
-      });
-
-      const { data } = await supabase
-        .from('licitacao_etapa_execucao')
-        .select('*')
-        .eq('licitacao_id', licitacaoId);
-
-      if (data) {
-        const mapped = sortByConfig(data, parsedConfigs);
-        setEtapas(mapped);
-        if (mapped.length > 0) setSelectedEtapa(mapped[0].etapa_codigo);
-      }
-    } else {
-      const mapped = sortByConfig(existingEtapas, parsedConfigs);
-      setEtapas(mapped);
+    const mapped = sortByConfig(init.etapas, parsedConfigs);
+    setEtapas(mapped);
+    if (mapped.length > 0) {
       const first = mapped.find(e => !isCompleted(e.status));
       if (first) setSelectedEtapa(first.etapa_codigo);
-      else if (mapped.length > 0) setSelectedEtapa(mapped[0].etapa_codigo);
+      else setSelectedEtapa(mapped[0].etapa_codigo);
     }
 
     setLoading(false);
@@ -447,10 +437,16 @@ export function LicitacaoEtapasTimeline({ licitacaoId, clienteId, licitacaoData,
     return (
       <Card className="border-dashed">
         <CardContent className="py-8 text-center">
-          <AlertCircle className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-          <p className="font-medium">Nenhuma etapa configurada</p>
+          <AlertCircle className="h-12 w-12 mx-auto mb-4 text-amber-500" />
+          <p className="font-medium">
+            {semConfig
+              ? 'Este cliente não possui etapas ativas em Etapas & Regras'
+              : 'Nenhuma etapa configurada'}
+          </p>
           <p className="text-sm text-muted-foreground mt-1">
-            Configure as etapas da licitação no cadastro do cliente
+            {semConfig
+              ? 'Configure as etapas em Clientes → Etapas & Regras para exibir a esteira desta licitação.'
+              : 'Configure as etapas da licitação no cadastro do cliente'}
           </p>
         </CardContent>
       </Card>

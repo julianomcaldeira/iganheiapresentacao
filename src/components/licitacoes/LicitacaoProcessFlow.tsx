@@ -2,9 +2,11 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { cn } from '@/lib/utils';
 import { sortEtapasForDisplay } from '@/lib/etapasOrder';
+import { ensureEtapasInicializadas, type EtapaExecucaoRow } from '@/lib/ensureEtapas';
+import { toast } from 'sonner';
 import {
   Scale, CheckCircle, FolderOpen, DollarSign, Swords, Trophy, Layers, Loader2, 
-  Brain, Users, Package, ListTodo, FileSignature, Receipt, Gavel
+  Brain, Users, Package, ListTodo, FileSignature, Receipt, Gavel, AlertTriangle
 } from 'lucide-react';
 
 const ETAPAS_INFO: Record<string, {
@@ -32,24 +34,39 @@ interface Props {
 }
 
 export function LicitacaoProcessFlow({ licitacaoId, clienteId }: Props) {
-  const [etapas, setEtapas] = useState<any[]>([]);
+  const [etapas, setEtapas] = useState<EtapaExecucaoRow[]>([]);
   const [configs, setConfigs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [semConfig, setSemConfig] = useState(false);
+  const [erroPermissao, setErroPermissao] = useState<string | null>(null);
 
   useEffect(() => {
+    let cancelled = false;
     const fetch = async () => {
-      const [cfgRes, etaRes] = await Promise.all([
-        supabase.from('licitacao_etapas_config').select('*').eq('cliente_id', clienteId).eq('ativo', true).order('ordem'),
-        supabase.from('licitacao_etapa_execucao').select('*').eq('licitacao_id', licitacaoId),
-      ]);
-
+      const cfgRes = await supabase
+        .from('licitacao_etapas_config')
+        .select('*')
+        .eq('cliente_id', clienteId)
+        .eq('ativo', true)
+        .order('ordem');
+      if (cancelled) return;
       const cfgs = cfgRes.data || [];
       setConfigs(cfgs);
 
+      const init = await ensureEtapasInicializadas(licitacaoId, clienteId);
+      if (cancelled) return;
+      setSemConfig(init.origem === 'semConfig');
+      setErroPermissao(init.origem === 'erro' ? (init.permissaoBloqueada ?? 'Erro ao inicializar etapas') : null);
+      if (init.origem === 'rpc') {
+        toast.success('Etapas da licitação inicializadas');
+      }
+      if (init.origem === 'erro') {
+        toast.error(`Falha ao inicializar etapas: ${init.permissaoBloqueada}`);
+      }
+
       const orderMap = new Map(cfgs.map((c: any) => [c.etapa_codigo, c.ordem]));
-      const raw = (etaRes.data || [])
+      const raw = (init.etapas || [])
         .filter((e: any) => e.etapa_codigo !== 'disputa_pregao');
-      // Normaliza exibição para a ordem canônica quando o banco ainda tem a legada
       const sorted = sortEtapasForDisplay(
         raw,
         (e: any) => e.etapa_codigo,
@@ -59,6 +76,7 @@ export function LicitacaoProcessFlow({ licitacaoId, clienteId }: Props) {
       setLoading(false);
     };
     fetch();
+    return () => { cancelled = true; };
   }, [licitacaoId, clienteId]);
 
   const isCompleted = (status: string) =>
@@ -69,6 +87,19 @@ export function LicitacaoProcessFlow({ licitacaoId, clienteId }: Props) {
 
   if (loading) {
     return <div className="flex justify-center py-2"><Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /></div>;
+  }
+
+  if (semConfig || erroPermissao) {
+    return (
+      <div className="flex items-center gap-2 py-3 px-4 rounded-lg border border-amber-300/60 bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-amber-200">
+        <AlertTriangle className="h-4 w-4 shrink-0" />
+        <span className="text-sm">
+          {semConfig
+            ? 'Este cliente não possui etapas ativas em Etapas & Regras. Configure em Clientes → Etapas & Regras para exibir a esteira.'
+            : `Não foi possível inicializar as etapas: ${erroPermissao}`}
+        </span>
+      </div>
+    );
   }
 
   if (etapas.length === 0) return null;
