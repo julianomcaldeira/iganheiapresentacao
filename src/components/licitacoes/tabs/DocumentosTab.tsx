@@ -329,7 +329,7 @@ export function DocumentosTab({ licitacaoId, clienteId, declaracaoTemplates, gen
                   <div className="space-y-0.5">
                     {cat.docs.map(doc => (
                       <div
-                        key={doc.id}
+                        key={doc.id || `base-${doc.nome}`}
                         className="flex items-center gap-3 py-2 px-2 rounded hover:bg-muted/50 group"
                       >
                         <Checkbox
@@ -339,6 +339,11 @@ export function DocumentosTab({ licitacaoId, clienteId, declaracaoTemplates, gen
                         <span className={`text-sm flex-1 ${isDisponivel(doc) ? 'text-foreground' : ''}`}>
                           {doc.nome}
                         </span>
+                        {doc.origem === 'base' && (
+                          <Badge variant="outline" className="text-[10px] text-muted-foreground">
+                            da base do cliente
+                          </Badge>
+                        )}
                         {isDisponivel(doc) ? (
                           <Badge className="text-[10px] bg-emerald-500/15 text-emerald-600 border-emerald-500/30 hover:bg-emerald-500/15">
                             ✓ Disponível na base
@@ -356,14 +361,16 @@ export function DocumentosTab({ licitacaoId, clienteId, declaracaoTemplates, gen
                         {doc.obrigatorio && (
                           <Badge variant="outline" className="text-[10px] border-destructive/30 text-destructive">Obrigatório</Badge>
                         )}
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100"
-                          onClick={() => handleRemove(doc.id)}
-                        >
-                          <Trash2 className="h-3 w-3" />
-                        </Button>
+                        {doc.id && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100"
+                            onClick={() => handleRemove(doc.id)}
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
+                        )}
                       </div>
                     ))}
                   </div>
