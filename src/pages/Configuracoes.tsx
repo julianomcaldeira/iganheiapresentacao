@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Button } from '@/components/ui/button';
@@ -66,6 +67,16 @@ export default function Configuracoes() {
   const [selectedClienteId, setSelectedClienteId] = useState<string | null>(null);
   const [taskgiEnabled, setTaskgiEnabled] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  // Aba ativa (permite abrir direto em /configuracoes?tab=base-demo)
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tabParam = searchParams.get('tab');
+  const [abaAtiva, setAbaAtiva] = useState(
+    tabParam === 'base-demo' ? 'base-demo' : 'perfil'
+  );
+
+  useEffect(() => {
+    if (tabParam === 'base-demo') setAbaAtiva('base-demo');
+  }, [tabParam]);
 
   const { fullSync } = useTaskGISync({ 
     enabled: taskgiEnabled,
@@ -223,8 +234,20 @@ export default function Configuracoes() {
 
   return (
     <MainLayout title="Configurações" subtitle="Preferências do usuário">
-      <Tabs defaultValue="perfil" className="space-y-6">
+      <Tabs
+        value={abaAtiva}
+        onValueChange={(v) => {
+          setAbaAtiva(v);
+          if (v === 'base-demo') setSearchParams({ tab: 'base-demo' }, { replace: true });
+          else setSearchParams({}, { replace: true });
+        }}
+        className="space-y-6"
+      >
         <TabsList className="bg-secondary p-1 rounded-xl flex-wrap h-auto">
+          <TabsTrigger value="base-demo" className="rounded-lg data-[state=active]:bg-background">
+            <Sparkles className="w-4 h-4 mr-2" />
+            Base Demo
+          </TabsTrigger>
           <TabsTrigger value="perfil" className="rounded-lg data-[state=active]:bg-background">
             <User className="w-4 h-4 mr-2" />
             Perfil
@@ -252,10 +275,6 @@ export default function Configuracoes() {
           <TabsTrigger value="integracoes" className="rounded-lg data-[state=active]:bg-background">
             <Link2 className="w-4 h-4 mr-2" />
             Integrações
-          </TabsTrigger>
-          <TabsTrigger value="base-demo" className="rounded-lg data-[state=active]:bg-background">
-            <Sparkles className="w-4 h-4 mr-2" />
-            Base Demo
           </TabsTrigger>
         </TabsList>
 

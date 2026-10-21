@@ -137,7 +137,6 @@ export default function LicitacoesPage() {
   const [selectedEtapaId, setSelectedEtapaId] = useState<string | null>(null);
   const [populando, setPopulando] = useState(false);
   const [refreshToken, setRefreshToken] = useState(0);
-  const [distStatus, setDistStatus] = useState<Record<string, number>>({});
   const autoPopularRef = useRef(false);
   const [showOrganizarDialog, setShowOrganizarDialog] = useState(false);
   const [simulacao, setSimulacao] = useState<SimulacaoOrganizacao | null>(null);
@@ -539,15 +538,6 @@ export default function LicitacoesPage() {
       ]);
       
       if (lRes.data) setLicitacoes(lRes.data as unknown as Licitacao[]);
-      // Distribuição de status da base (exibida no topo da listagem)
-      if (lRes.data) {
-        const dist: Record<string, number> = {};
-        (lRes.data as any[]).forEach((l: any) => {
-          const s = l.status || 'sem status';
-          dist[s] = (dist[s] || 0) + 1;
-        });
-        setDistStatus(dist);
-      }
       if (eRes.data) setEmpresas(eRes.data);
       if (pRes.data) setProdutos(pRes.data as Produto[]);
       if (dRes.data) setDeclaracaoTemplates(dRes.data as DeclaracaoTemplate[]);
@@ -1502,27 +1492,6 @@ export default function LicitacoesPage() {
                 <Plus className="h-4 w-4 mr-2" />Nova Licitação
               </Button>
             </div>
-
-            {/* Distribuição de status da base */}
-            {Object.keys(distStatus).length > 0 && (
-              <div className="flex items-center gap-2 flex-wrap text-xs text-muted-foreground">
-                <span className="font-medium">Base:</span>
-                {Object.entries(distStatus).map(([st, qtd]) => {
-                  const cfg = getStatusConfigShared(st);
-                  return (
-                    <span
-                      key={st}
-                      className={cn(
-                        'inline-flex items-center gap-1 px-2 py-0.5 rounded-full border',
-                        cfg.color
-                      )}
-                    >
-                      {cfg.label}: <span className="font-semibold">{qtd}</span>
-                    </span>
-                  );
-                })}
-              </div>
-            )}
           </div>
 
           {/* Advanced Search Panel */}

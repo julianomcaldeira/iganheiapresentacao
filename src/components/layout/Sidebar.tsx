@@ -20,6 +20,7 @@ import {
   Package,
   ClipboardList,
   Shield,
+  Sparkles,
   Menu,
   X,
   LogOut,
@@ -115,6 +116,7 @@ const navItems: NavItem[] = [
       
       { label: 'Auditoria', href: '/auditoria', icon: History, requiredRole: 'admin' },
       { label: 'Configurações', href: '/configuracoes', icon: Settings, requiredRole: 'admin' },
+      { label: 'Base Demo', href: '/configuracoes?tab=base-demo', icon: Sparkles, requiredRole: 'admin' },
     ],
   },
 ];
@@ -179,9 +181,15 @@ export function Sidebar() {
     );
   };
 
-  const isActive = (href: string) => location.pathname === href;
+  // considers query string (ex.: /configuracoes?tab=base-demo)
+  const isActive = (href: string) => {
+    const [path, query] = href.split('?');
+    if (location.pathname !== path) return false;
+    if (!query) return location.search !== '?tab=base-demo';
+    return location.search === `?${query}`;
+  };
   const isChildActive = (children?: NavItem[]) =>
-    children?.some((child) => location.pathname === child.href);
+    children?.some((child) => location.pathname === child.href.split('?')[0]);
 
   const handleSignOut = async () => {
     await signOut();
