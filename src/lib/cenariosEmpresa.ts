@@ -34,7 +34,7 @@ export const PERFIS_EMPRESA: Record<
     rotulo: 'Processo completo — ganho',
     descricao: 'Todas as etapas concluídas, item adjudicado, contrato e empenho firmados.',
     ateEtapa: 99,
-    statusLicitacao: 'em_andamento',
+    statusLicitacao: 'finalizado',
     resultado: 'ganho',
   },
   disputa: {
@@ -44,6 +44,20 @@ export const PERFIS_EMPRESA: Record<
     statusLicitacao: 'em_andamento',
     resultado: 'pendente',
   },
+  perdido: {
+    rotulo: 'Processo completo — não adjudicada',
+    descricao: 'Todas as etapas concluídas, porém sem ganho de item.',
+    ateEtapa: 99,
+    statusLicitacao: 'recusado',
+    resultado: 'perdeu',
+  },
+  analise: {
+    rotulo: 'Em análise',
+    descricao: 'Etapa de análise e aprovação em curso.',
+    ateEtapa: 3,
+    statusLicitacao: 'pendente_analise',
+    resultado: 'pendente',
+  },
   proposta: {
     rotulo: 'Proposta finalizada',
     descricao: 'Análise, aprovação e proposta concluídas; disparo não iniciado.',
@@ -51,36 +65,27 @@ export const PERFIS_EMPRESA: Record<
     statusLicitacao: 'em_andamento',
     resultado: 'pendente',
   },
-  analise: {
-    rotulo: 'Em análise',
-    descricao: 'Etapa de análise e aprovação em curso.',
-    ateEtapa: 3,
-    statusLicitacao: 'em_analise',
-    resultado: 'pendente',
-  },
   inicial: {
     rotulo: 'Iniciada',
     descricao: 'Análise do edital concluída, demais etapas não iniciadas.',
     ateEtapa: 1,
-    statusLicitacao: 'em_analise',
+    statusLicitacao: 'pendente_analise',
     resultado: 'pendente',
-  },
-  perdido: {
-    rotulo: 'Processo completo — não adjudicada',
-    descricao: 'Todas as etapas concluídas, porém sem ganho de item.',
-    ateEtapa: 99,
-    statusLicitacao: 'em_andamento',
-    resultado: 'perdeu',
   },
 };
 
+/**
+ * Ordem dos perfis: as 4 primeiras empresas cobrem os 4 status gerais
+ * (finalizado, em_andamento, recusado, pendente_analise), garantindo
+ * variedade na listagem.
+ */
 const PERFIS: PerfilEmpresa[] = [
   'avancado',
   'disputa',
-  'proposta',
-  'analise',
-  'inicial',
   'perdido',
+  'analise',
+  'proposta',
+  'inicial',
 ];
 
 /** Status final de cada etapa do sistema quando ela entra no cenário. */
@@ -109,9 +114,9 @@ function hash(s: string): number {
   return h >>> 0;
 }
 
-/** Perfil atribuído a uma empresa (determinístico). */
-export function perfilDaEmpresa(empresaId: string, indice = 0): PerfilEmpresa {
-  return PERFIS[(hash(empresaId) + indice) % PERFIS.length];
+/** Perfil atribuído a uma empresa (rodízio, garantindo variedade). */
+export function perfilDaEmpresa(indice: number): PerfilEmpresa {
+  return PERFIS[indice % PERFIS.length];
 }
 
 export interface RelatorioCenariosEmpresa {
@@ -160,10 +165,12 @@ export async function aplicarCenariosPorEmpresa(
   }
 
   const empresaIds = empresas.map((e: any) => e.id);
+  const clienteIds = Array.from(new Set((empresas as any[]).map((e: any) => e.cliente_id)));
+
   const { data: licitacoes } = await supabase
     .from('licitacoes')
     .select('id, cliente_id, numero, empresa_id, objeto, valor_estimado')
-    .in('empresa_id', empresaIds);
+    .in('cliente_id', clienteIds);
 
   const licPorEmpresa = new Map<string, any[]>();
   (licitacoes || []).forEach((l: any) => {
@@ -172,13 +179,17 @@ export async function aplicarCenariosPorEmpresa(
     licPorEmpresa.get(l.empresa_id)!.push(l);
   });
 
-  const empresasComCenario: EmpresaCenario[] = empresas.map((e: any, i: number) => ({
-    id: e.id,
-    razao_social: e.nome_fantasia || e.razao_social,
-    cliente_id: e.cliente_id,
-    perfil: perfilDaEmpresa(e.id, i),
-    licitacoes: (licPorEmpresa.get(e.id) || []).map((l: any) => l.id),
-  }));
+  const empresasComCenario: EmpresaCenario[] = [...(empresas as any[])]
+    .sort((a: any, b: any) =>
+      `${a.cliente_id}-${a.id}`.localeCompare(`${b.cliente_id}-${b.id}`)
+    )
+    .map((e: any, i: number) => ({
+      id: e.id,
+      razao_social: e.nome_fantasia || e.razao_social,
+      cliente_id: e.cliente_id,
+      perfil: perfilDaEmpresa(i),
+      licitacoes: (licPorEmpresa.get(e.id) || []).map((l: any) => l.id),
+    }));
 
   for (const empresa of empresasComCenario) {
     relatorio.empresas++;
@@ -200,6 +211,27 @@ export async function aplicarCenariosPorEmpresa(
         }
       }
     }
+  }
+
+  // Licitações sem empresa vinculada: também recebem status variety
+  const StatusPelaEmpresa = new Set(
+    empresasComCenario.flatMap((e) => e.licitacoes)
+  );
+  const orfas = (licitacoes || []).filter((l: any) => !StatusPelaEmpresa.has(l.id));
+  const statusOrfaos: Array<'finalizado' | 'em_andamento' | 'recusado' | 'pendente_analise'> = [
+    'em_andamento',
+    'pendente_analise',
+    'finalizado',
+    'recusado',
+  ];
+  for (let i = 0; i < orfas.length; i++) {
+    const status = statusOrfaos[i % statusOrfaos.length];
+    const { error } = await supabase
+      .from('licitacoes')
+      .update({ status })
+      .eq('id', orfas[i].id);
+    if (error) relatorio.erros.push(`status ${orfas[i].numero}: ${error.message}`);
+    else relatorio.licitacoes++;
   }
 
   return relatorio;
