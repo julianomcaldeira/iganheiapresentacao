@@ -333,7 +333,7 @@ export async function popularProcessoLicitatorio(
       licitacao_id: licitacaoId,
       arquivo_nome: `Edital ${lic.numero}.pdf`,
       arquivos_analisados: [`Edital ${lic.numero}.pdf`, 'Anexo I — Termo de Referência'],
-      resultado: { conteudo: analise, modelo: 'gpt-4o', tokens: 4820 },
+      resultado: { conteudo: analise, modelo: 'gpt-4o', demo: true, tokens: 4820 },
       status: 'concluida',
       created_by: userId ?? null,
     });
@@ -611,7 +611,7 @@ export async function popularProcessoLicitatorio(
     const { error } = await supabase
       .from('licitacoes')
       .update({
-        analise_ia: { conteudo: analise, modelo: 'gpt-4o' },
+        analise_ia: { conteudo: analise, modelo: 'gpt-4o', demo: true },
         analise_ia_status: 'concluida',
         analise_ia_data: dataAprov(12),
         etapa_atual_codigo: 'resultado',
@@ -634,4 +634,78 @@ export async function popularProcessoLicitatorio(
 
 function fmtValor(v: number): string {
   return (v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
+
+export interface RelatorioLote {
+  populadas: string[];
+  jaPopuladas: string[];
+  etapas: number;
+  perguntas: number;
+  documentos: number;
+  erros: string[];
+}
+
+/**
+ * Popula em lote as licitações que ainda NÃO foram populadas com exemplo.
+ *
+ * O marcador de "já populada" é o campo `demo: true` gravado em
+ * licitacao_analises.resultado — assim a operação roda uma única vez por
+ * licitação e nunca sobrescreve conteúdo já existente.
+ */
+export async function popularExemplosPendentes(
+  licitacoes: Array<{ id: string; numero: string }>,
+  userId?: string,
+  onProgress?: (feito: number, total: number) => void
+): Promise<RelatorioLote> {
+  const relatorio: RelatorioLote = {
+    populadas: [],
+    jaPopuladas: [],
+    etapas: 0,
+    perguntas: 0,
+    documentos: 0,
+    erros: [],
+  };
+  if (licitacoes.length === 0) return relatorio;
+
+  const ids = licitacoes.map((l) => l.id);
+  const [analisesRes, etapasRes] = await Promise.all([
+    supabase
+      .from('licitacao_analises')
+      .select('licitacao_id, resultado')
+      .in('licitacao_id', ids),
+    supabase
+      .from('licitacao_etapa_execucao')
+      .select('licitacao_id, status')
+      .eq('etapa_codigo', 'analise_edital')
+      .in('licitacao_id', ids),
+  ]);
+
+  // Marcador primário: análise marcada como demo.
+  // Marcador secundário: etapa de Análise IA já concluída (conteúdo real).
+  const jaPopuladas = new Set<string>();
+  (analisesRes.data || []).forEach((a: any) => {
+    if ((a.resultado as any)?.demo === true) jaPopuladas.add(a.licitacao_id);
+  });
+  (etapasRes.data || []).forEach((e: any) => {
+    if (e.status === 'edital_analisado') jaPopuladas.add(e.licitacao_id);
+  });
+
+  const pendentes = licitacoes.filter((l) => !jaPopuladas.has(l.id));
+  relatorio.jaPopuladas = licitacoes.filter((l) => jaPopuladas.has(l.id)).map((l) => l.id);
+
+  let feito = 0;
+  for (const lic of pendentes) {
+    const rel = await popularProcessoLicitatorio(lic.id, userId);
+    if (rel.erros.length > 0) {
+      relatorio.erros.push(...rel.erros.map((e) => `${lic.numero}: ${e}`));
+    }
+    relatorio.populadas.push(lic.id);
+    relatorio.etapas += rel.etapasPopuladas.length;
+    relatorio.perguntas += rel.perguntasRespondidas;
+    relatorio.documentos += Object.values(rel.documentosPorSecao || {}).reduce((a, b) => a + b, 0);
+    feito++;
+    onProgress?.(feito, pendentes.length);
+  }
+
+  return relatorio;
 }

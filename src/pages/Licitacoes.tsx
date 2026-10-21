@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -28,7 +28,7 @@ import { ColumnFilterValue, EMPTY_COLUMN_FILTER, isColumnFilterActive } from '@/
 import { LicitacaoEtapasTimeline } from '@/components/licitacoes/LicitacaoEtapasTimeline';
 import { LicitacaoProcessFlow } from '@/components/licitacoes/LicitacaoProcessFlow';
 import { ensureEtapasEmLote } from '@/lib/ensureEtapas';
-import { popularProcessoLicitatorio } from '@/lib/popularProcessoLicitatorio';
+import { popularProcessoLicitatorio, popularExemplosPendentes } from '@/lib/popularProcessoLicitatorio';
 import { garantirDocumentosLicitacao } from '@/lib/garantirDocumentosLicitacao';
 import { 
   Plus, Search, Trash2, Play, CheckCircle, Clock, AlertCircle, FileText, 
@@ -125,6 +125,7 @@ export default function LicitacoesPage() {
   const [selectedEtapaId, setSelectedEtapaId] = useState<string | null>(null);
   const [populando, setPopulando] = useState(false);
   const [refreshToken, setRefreshToken] = useState(0);
+  const autoPopularRef = useRef(false);
   
   const [licitacaoProdutos, setLicitacaoProdutos] = useState<LicitacaoProduto[]>([]);
   const [showAddProduto, setShowAddProduto] = useState(false);
@@ -609,6 +610,33 @@ export default function LicitacoesPage() {
       if (isAdmin) {
         const { data: clientesData } = await supabase.from('clientes').select('id, nome').eq('ativo', true);
         if (clientesData) setClientes(clientesData);
+      }
+
+      // Popula automaticamente as licitações de exemplo que ainda não
+      // foram populadas (marcador: licitacao_analises.resultado.demo)
+      const lista = (lRes.data || []) as Array<{ id: string; numero: string }>;
+      if (lista.length > 0 && !autoPopularRef.current) {
+        autoPopularRef.current = true;
+        setPopulando(true);
+        void popularExemplosPendentes(lista, profile?.id)
+          .then((rel) => {
+            if (rel.populadas.length === 0) return;
+            console.info('[Popular Exemplo] Relatório automático:', rel);
+            if (rel.erros.length > 0) {
+              toast.error(
+                `${rel.populadas.length} licitação(ões) populada(s) com ${rel.erros.length} erro(s). Veja o console.`
+              );
+            } else {
+              toast.success(
+                `${rel.populadas.length} licitação(ões) de exemplo populada(s) — ${rel.etapas} etapas, ${rel.perguntas} perguntas respondidas pela IA, ${rel.documentos} documentos`
+              );
+            }
+            setRefreshToken((t) => t + 1);
+          })
+          .finally(() => {
+            autoPopularRef.current = false;
+            setPopulando(false);
+          });
       }
     } catch (error) {
       console.error('Erro ao carregar dados:', error);
