@@ -275,10 +275,10 @@ export function LicitacaoEtapasTimeline({ licitacaoId, clienteId, licitacaoData,
   };
 
   const sortByConfig = (data: any[], cfgs: EtapaConfig[]): EtapaExecucao[] => {
-    const orderMap = new Map(cfgs.map(c => [c.etapa_codigo, c.ordem]));
-    const mapped = data
-      .filter(d => d.etapa_codigo !== 'disputa_pregao')
-      .map(d => ({ ...d, dados: (d.dados as Record<string, unknown>) || {} }));
+    // Ordem configurada do cliente (a query já vem em ordem por `ordem`)
+    const orderMap = new Map(cfgs.map((c, i) => [c.etapa_codigo, i]));
+    // Mostra todas as etapas ativas configuradas para o cliente
+    const mapped = data.map(d => ({ ...d, dados: (d.dados as Record<string, unknown>) || {} }));
     // Normaliza exibição para a ordem canônica quando o banco ainda tem a legada
     return sortEtapasForDisplay(
       mapped,

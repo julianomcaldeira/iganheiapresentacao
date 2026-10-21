@@ -6,12 +6,20 @@
  * NÃO inventa etapas padrão: se o cliente não tem configuração
  * ativa, retorna `semConfig` para o chamador exibir um aviso.
  *
+ * IMPORTANTE: uma licitação pode já ter execução PARCIAL (ex.: só
+ * "proposta"). Neste caso as etapas faltantes da config precisam ser
+ * preenchidas — a RPC inicializar_etapas_licitacao usa
+ * ON CONFLICT (licitacao_id, etapa_codigo) DO NOTHING, ou seja,
+ * preenche exatamente as que faltam, sem duplicar as existentes.
+ *
  * Fluxo:
- * 1. Se já existem etapas de execução, retorna.
- * 2. Tenta a RPC SECURITY DEFINER inicializar_etapas_licitacao
- *    (lê a config do cliente e grava a execução).
- * 3. Se a RPC não inseriu nada (ou falhou), retorna semConfig /
- *    erro de permissão para o chamador reportar.
+ * 1. Lê config ativa do cliente e etapas de execução da licitação.
+ * 2. Se config vazia → semConfig.
+ * 3. Se nada faltando → 'existentes'.
+ * 4. Chama a RPC (SECURITY DEFINER).
+ * 5. Se ainda faltar algo (RPC inexistente/erro) → insere direto as
+ *    etapas da config que faltam (RLS permite ao admin/usuário do
+ *    cliente em licitacao_etapa_execucao).
  */
 import { supabase } from '@/integrations/supabase/client';
 
@@ -27,10 +35,18 @@ export interface EtapaExecucaoRow {
   data_conclusao: string | null;
 }
 
+export type InitOrigem =
+  | 'existentes'
+  | 'rpc'
+  | 'fallback_direto'
+  | 'semConfig'
+  | 'erro';
+
 export interface InitResult {
   etapas: EtapaExecucaoRow[];
-  /** existentes: já havia; rpc: inicializou agora; semConfig: cliente sem etapas ativas; erro: falha de permissão/rede */
-  origem: 'existentes' | 'rpc' | 'semConfig' | 'erro';
+  origem: InitOrigem;
+  /** Etapas da config do cliente que não puderam ser criadas */
+  faltantes?: string[];
   /** Mensagem de erro de permissão/rede, quando houver */
   permissaoBloqueada?: string;
 }
@@ -44,33 +60,42 @@ async function fetchExecucao(licitacaoId: string): Promise<EtapaExecucaoRow[]> {
   return (data || []) as EtapaExecucaoRow[];
 }
 
-async function fetchConfigAtiva(clienteId: string): Promise<number> {
+async function fetchConfigAtiva(
+  clienteId: string
+): Promise<{ codigos: string[]; erro?: string }> {
   const { data, error } = await supabase
     .from('licitacao_etapas_config')
     .select('etapa_codigo')
     .eq('cliente_id', clienteId)
     .eq('ativo', true);
-  if (error) return -1;
-  return (data || []).length;
+  if (error) return { codigos: [], erro: error.message };
+  return { codigos: (data || []).map((c: any) => c.etapa_codigo as string) };
+}
+
+function codigosFaltantes(execucao: EtapaExecucaoRow[], config: string[]): string[] {
+  const existentes = new Set(execucao.map((e) => e.etapa_codigo));
+  return config.filter((c) => !existentes.has(c));
 }
 
 export async function ensureEtapasInicializadas(
   licitacaoId: string,
   clienteId: string
 ): Promise<InitResult> {
+  const cfg = await fetchConfigAtiva(clienteId);
+  if (cfg.erro) {
+    return { etapas: [], origem: 'erro', permissaoBloqueada: cfg.erro };
+  }
+  if (cfg.codigos.length === 0) {
+    return { etapas: await fetchExecucao(licitacaoId), origem: 'semConfig' };
+  }
+
   const existing = await fetchExecucao(licitacaoId);
-  if (existing.length > 0) {
+  const faltantes = codigosFaltantes(existing, cfg.codigos);
+  if (faltantes.length === 0) {
     return { etapas: existing, origem: 'existentes' };
   }
 
-  const cfgCount = await fetchConfigAtiva(clienteId);
-  if (cfgCount === 0) {
-    return { etapas: [], origem: 'semConfig' };
-  }
-  if (cfgCount < 0) {
-    return { etapas: [], origem: 'erro', permissaoBloqueada: 'Não foi possível ler licitacao_etapas_config' };
-  }
-
+  // Tenta a RPC — preenche apenas as etapas faltantes
   let rpcError: string | undefined;
   try {
     const { error } = await supabase.rpc('inicializar_etapas_licitacao', {
@@ -82,15 +107,39 @@ export async function ensureEtapasInicializadas(
     rpcError = (e as Error).message;
   }
 
-  const afterRpc = await fetchExecucao(licitacaoId);
-  if (afterRpc.length > 0) {
-    return { etapas: afterRpc, origem: 'rpc' };
+  let atuais = await fetchExecucao(licitacaoId);
+  let aindaFaltam = codigosFaltantes(atuais, cfg.codigos);
+  if (aindaFaltam.length === 0) {
+    return { etapas: atuais, origem: 'rpc' };
   }
 
-  if (rpcError) {
-    return { etapas: [], origem: 'erro', permissaoBloqueada: rpcError };
+  // Fallback: grava direto as etapas da config que faltam
+  const { error: insErr } = await supabase
+    .from('licitacao_etapa_execucao')
+    .upsert(
+      aindaFaltam.map((codigo) => ({
+        licitacao_id: licitacaoId,
+        etapa_codigo: codigo,
+        status: 'nao_iniciada',
+      })),
+      { onConflict: 'licitacao_id,etapa_codigo', ignoreDuplicates: true }
+    );
+
+  atuais = await fetchExecucao(licitacaoId);
+  aindaFaltam = codigosFaltantes(atuais, cfg.codigos);
+  if (aindaFaltam.length === 0) {
+    return { etapas: atuais, origem: 'fallback_direto' };
   }
-  return { etapas: [], origem: 'semConfig' };
+
+  return {
+    etapas: atuais,
+    origem: 'erro',
+    faltantes: aindaFaltam,
+    permissaoBloqueada:
+      insErr?.message ||
+      rpcError ||
+      `Não foi possível criar as etapas: ${aindaFaltam.join(', ')}`,
+  };
 }
 
 export interface BatchReport {
@@ -100,38 +149,79 @@ export interface BatchReport {
 }
 
 /**
- * Inicializa etapas para várias licitações (listagem).
- * Retorna o relatório de quais foram populadas, quais ficaram sem
- * configuração do cliente e quais falharam por permissão.
+ * Inicializa/completa as etapas de várias licitações (listagem).
+ * Só chama a RPC para as licitações que realmente estão faltando
+ * etapas em relação à config do cliente.
  */
 export async function ensureEtapasEmLote(
   licitacoes: Array<{ id: string; cliente_id: string | null }>
 ): Promise<BatchReport> {
   const report: BatchReport = { populadas: [], semConfig: [], bloqueadas: [] };
-  const configCache = new Map<string, number>();
+  if (licitacoes.length === 0) return report;
 
+  const licIds = licitacoes.map((l) => l.id);
+  const clienteIds = Array.from(
+    new Set(licitacoes.map((l) => l.cliente_id).filter(Boolean) as string[])
+  );
+
+  const [execRes, cfgRes] = await Promise.all([
+    supabase
+      .from('licitacao_etapa_execucao')
+      .select('licitacao_id, etapa_codigo')
+      .in('licitacao_id', licIds),
+    clienteIds.length > 0
+      ? supabase
+          .from('licitacao_etapas_config')
+          .select('cliente_id, etapa_codigo')
+          .in('cliente_id', clienteIds)
+          .eq('ativo', true)
+      : Promise.resolve({ data: [], error: null } as any),
+  ]);
+
+  const execPorLic = new Map<string, Set<string>>();
+  (execRes.data || []).forEach((r: any) => {
+    if (!execPorLic.has(r.licitacao_id)) execPorLic.set(r.licitacao_id, new Set());
+    execPorLic.get(r.licitacao_id)!.add(r.etapa_codigo);
+  });
+
+  const cfgPorCliente = new Map<string, string[]>();
+  (cfgRes.data || []).forEach((r: any) => {
+    if (!cfgPorCliente.has(r.cliente_id)) cfgPorCliente.set(r.cliente_id, []);
+    cfgPorCliente.get(r.cliente_id)!.push(r.etapa_codigo);
+  });
+
+  const aInicializar: Array<{ id: string; cliente_id: string }> = [];
   for (const lic of licitacoes) {
     if (!lic.cliente_id) {
-      report.bloqueadas.push({ licitacaoId: lic.id, erro: 'licitação sem cliente_id' });
+      report.bloqueadas.push({
+        licitacaoId: lic.id,
+        erro: 'licitação sem cliente_id — não é possível definir as etapas',
+      });
       continue;
     }
-
-    let cfgCount = configCache.get(lic.cliente_id);
-    if (cfgCount === undefined) {
-      cfgCount = await fetchConfigAtiva(lic.cliente_id);
-      configCache.set(lic.cliente_id, cfgCount);
-    }
-    if (cfgCount === 0) {
+    const cfg = cfgPorCliente.get(lic.cliente_id) || [];
+    if (cfg.length === 0) {
       report.semConfig.push(lic.id);
       continue;
     }
-
-    const result = await ensureEtapasInicializadas(lic.id, lic.cliente_id);
-    if (result.origem === 'rpc') report.populadas.push(lic.id);
-    else if (result.origem === 'erro') {
-      report.bloqueadas.push({ licitacaoId: lic.id, erro: result.permissaoBloqueada || 'erro desconhecido' });
-    }
-    // 'existentes' não precisa entrar no relatório (já tinha etapas)
+    const existentes = execPorLic.get(lic.id) || new Set<string>();
+    if (cfg.every((c) => existentes.has(c))) continue; // já está completa
+    aInicializar.push({ id: lic.id, cliente_id: lic.cliente_id });
   }
+
+  for (const lic of aInicializar) {
+    const result = await ensureEtapasInicializadas(lic.id, lic.cliente_id);
+    if (result.origem === 'rpc' || result.origem === 'fallback_direto') {
+      report.populadas.push(lic.id);
+    } else if (result.origem === 'erro') {
+      report.bloqueadas.push({
+        licitacaoId: lic.id,
+        erro:
+          result.permissaoBloqueada ||
+          `etapas faltantes: ${(result.faltantes || []).join(', ')}`,
+      });
+    }
+  }
+
   return report;
 }

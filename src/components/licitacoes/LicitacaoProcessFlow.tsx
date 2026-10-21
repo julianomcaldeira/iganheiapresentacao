@@ -64,9 +64,10 @@ export function LicitacaoProcessFlow({ licitacaoId, clienteId }: Props) {
         toast.error(`Falha ao inicializar etapas: ${init.permissaoBloqueada}`);
       }
 
-      const orderMap = new Map(cfgs.map((c: any) => [c.etapa_codigo, c.ordem]));
-      const raw = (init.etapas || [])
-        .filter((e: any) => e.etapa_codigo !== 'disputa_pregao');
+      // Ordem configurada do cliente (a query já vem em ordem por `ordem`)
+      const orderMap = new Map(cfgs.map((c: any, i: number) => [c.etapa_codigo, i]));
+      // Mostra todas as etapas ativas configuradas para o cliente
+      const raw = init.etapas || [];
       const sorted = sortEtapasForDisplay(
         raw,
         (e: any) => e.etapa_codigo,
@@ -89,7 +90,7 @@ export function LicitacaoProcessFlow({ licitacaoId, clienteId }: Props) {
     return <div className="flex justify-center py-2"><Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /></div>;
   }
 
-  if (semConfig || erroPermissao) {
+  if (etapas.length === 0 && (semConfig || erroPermissao)) {
     return (
       <div className="flex items-center gap-2 py-3 px-4 rounded-lg border border-amber-300/60 bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-amber-200">
         <AlertTriangle className="h-4 w-4 shrink-0" />
