@@ -1,5 +1,159 @@
+export interface DocumentoBaseItem {
+  categoria: SecaoDocumento;
+  nome: string;
+  descricao: string;
+  status: string;
+  obrigatorio: boolean;
+  data_validade: string | null;
+  observacoes: string | null;
+}
+
 /**
- * Disponibiliza a listagem de documentos nas seções controladas pelo
+ * Calcula a base de documentos de um cliente SEM gravar nada.
+ *
+ * Usada pela aba Documentos para garantir que as 4 seções apareçam
+ * preenchidas mesmo quando a gravação no banco é bloqueada por RLS.
+ */
+export async function buscarBaseDocumentosDoCliente(
+  clienteId: string
+): Promise<DocumentoBaseItem[]> {
+  if (!clienteId) return [];
+
+  const [licRes, empRes, cliRes, tplRes] = await Promise.all([
+    supabase
+      .from('licitacoes')
+      .select('id, numero, objeto, orgao, modalidade, portal, valor_estimado')
+      .eq('cliente_id', clienteId),
+    supabase
+      .from('empresas')
+      .select('id, cliente_id, razao_social, cnpj')
+      .eq('cliente_id', clienteId),
+    supabase.from('clientes').select('id, nome').eq('id', clienteId).maybeSingle(),
+    supabase
+      .from('declaracoes_templates')
+      .select('id, nome, titulo')
+      .eq('cliente_id', clienteId)
+      .eq('ativo', true),
+  ]);
+
+  const licitacoes = (licRes.data || []) as any[];
+  const empresas = (empRes.data || []) as any[];
+  const licIds = licitacoes.map((l) => l.id);
+
+  const [docsRes, idocRes] = await Promise.all([
+    licIds.length > 0
+      ? supabase
+          .from('licitacao_documentos_checklist')
+          .select('id, licitacao_id, nome, descricao, categoria, status, obrigatorio, data_validade, observacoes')
+          .in('licitacao_id', licIds)
+      : Promise.resolve({ data: [], error: null } as any),
+    empresas.length > 0
+      ? supabase
+          .from('idocumentei_documentos')
+          .select('id, empresa_id, tipo, nome, status, data_validade')
+          .in('empresa_id', empresas.map((e) => e.id))
+      : Promise.resolve({ data: [], error: null } as any),
+  ]);
+
+  const base = new Map<string, DocumentoBaseItem>();
+
+  // (a) documentos já existentes nas licitações do cliente
+  for (const doc of (docsRes.data || []) as any[]) {
+    const categoria: SecaoDocumento = SECOES_DOCUMENTOS.includes(doc.categoria)
+      ? doc.categoria
+      : inferirSecaoDocumento(doc.nome);
+    const k = chave(doc.nome);
+    const atual = base.get(k);
+    if (!atual || (atual.status !== 'concluido' && doc.status === 'concluido')) {
+      base.set(k, {
+        categoria,
+        nome: doc.nome,
+        descricao: doc.descricao || 'Documento da base de habilitação do cliente.',
+        status: doc.status || 'pendente',
+        obrigatorio: doc.obrigatorio ?? true,
+        data_validade: doc.data_validade,
+        observacoes: doc.observacoes,
+      });
+    }
+  }
+
+  // (b) CNDs do i-Documentei
+  for (const doc of (idocRes.data || []) as any[]) {
+    const emp = empresas.find((e) => e.id === doc.empresa_id);
+    if (!emp) continue;
+    const nome = `${doc.nome}${emp.razao_social ? ` — ${emp.razao_social}` : ''}`;
+    const k = chave(nome);
+    if (base.has(k)) continue;
+    base.set(k, {
+      categoria: 'cnd',
+      nome,
+      descricao: `Certidão obtida via i-Documentei (${doc.tipo || 'CND'}).`,
+      status: doc.status === 'vencido' ? 'pendente' : 'concluido',
+      obrigatorio: true,
+      data_validade: doc.data_validade,
+      observacoes: 'Disponível na base do cliente (i-Documentei).',
+    });
+  }
+
+  // (c) templates de declaração do cliente
+  for (const t of (tplRes.data || []) as any[]) {
+    const nome = t.nome || t.titulo;
+    if (!nome) continue;
+    const k = chave(nome);
+    if (base.has(k)) continue;
+    base.set(k, {
+      categoria: 'declaracao',
+      nome,
+      descricao: 'Declaração modelada a partir do template do cliente.',
+      status: 'concluido',
+      obrigatorio: true,
+      data_validade: hojeMais(90),
+      observacoes: 'Gerada a partir do template do cliente.',
+    });
+  }
+
+  // (d) completa as seções vazias com a listagem padrão do perfil
+  const secoesPresentes = new Set(Array.from(base.values()).map((d) => d.categoria));
+  if (!SECOES_DOCUMENTOS.every((s) => secoesPresentes.has(s))) {
+    const lic = licitacoes[0];
+    const nomeCliente = (cliRes.data as any)?.nome || 'Licitante';
+    const ctx: ContextoExemplo = {
+      licitacaoId: lic?.id || clienteId,
+      numero: lic?.numero || '000/0000',
+      objeto: lic?.objeto || 'Objeto da licitação',
+      orgao: lic?.orgao || 'Órgão Licitante',
+      modalidade: lic?.modalidade || 'Pregão Eletrônico',
+      portal: lic?.portal || '',
+      valorEstimado: Number(lic?.valor_estimado || 0),
+      clienteNome: nomeCliente,
+      ano: new Date().getFullYear(),
+    };
+    const padrao = gerarDocumentosChecklist(
+      ctx,
+        [],
+      docsExtrasDoPerfil(inferirPerfil({ nome: nomeCliente }))
+    );
+    for (const doc of padrao) {
+      if (secoesPresentes.has(doc.categoria)) continue;
+      const k = chave(doc.nome);
+      if (base.has(k)) continue;
+      base.set(k, {
+        categoria: doc.categoria as SecaoDocumento,
+        nome: doc.nome,
+        descricao: doc.descricao,
+        status: doc.status,
+        obrigatorio: doc.obrigatorio,
+        data_validade: doc.data_validade,
+        observacoes: doc.observacoes,
+      });
+    }
+  }
+
+  return Array.from(base.values());
+}
+
+/**
+ * Garante a listagem de documentos nas seções controladas pelo
  * i-Ganhei, para TODOS os clientes da plataforma:
  *
  *   cnd        -> CNDs (Certidões Negativas)

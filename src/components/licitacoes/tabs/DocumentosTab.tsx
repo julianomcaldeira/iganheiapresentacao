@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -10,7 +10,7 @@ import {
   Globe, ClipboardList, FileCheck, FolderOpen, ChevronDown, ChevronRight, RefreshCw
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { garantirDocumentosLicitacao } from '@/lib/garantirDocumentosLicitacao';
+import { garantirDocumentosLicitacao, buscarBaseDocumentosDoCliente, type DocumentoBaseItem } from '@/lib/garantirDocumentosLicitacao';
 
 interface DocumentoChecklist {
   id: string;
@@ -51,10 +51,52 @@ export function DocumentosTab({ licitacaoId, clienteId, declaracaoTemplates, gen
   const [sincronizando, setSincronizando] = useState(false);
   const [tentativas, setTentativas] = useState(0);
   const [erroBase, setErroBase] = useState<string | null>(null);
+  const [base, setBase] = useState<DocumentoBaseItem[]>([]);
 
   useEffect(() => {
     fetchDocumentos();
   }, [licitacaoId, tentativas]);
+
+  /**
+   * Base de documentos do cliente (calculada no front, sem depender de
+   * gravação). Garante que as 4 seções apareçam preenchidas na demo,
+   * mesmo que o banco bloqueie a gravação.
+   */
+  useEffect(() => {
+    let ativo = true;
+    (async () => {
+      const itens = await buscarBaseDocumentosDoCliente(clienteId);
+      if (ativo) setBase(itens);
+    })();
+    return () => { ativo = false; };
+  }, [clienteId]);
+
+  /** Lista exibida: gravados no banco + base do cliente (sem duplicar). */
+  const listaExibida = useMemo(() => {
+    const porNome = new Map<string, any>();
+    for (const d of documentos) {
+      porNome.set(
+        d.nome.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim(),
+        { ...d, origem: 'gravado' }
+      );
+    }
+    for (const b of base) {
+      const k = b.nome.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+      if (porNome.has(k)) continue;
+      porNome.set(k, {
+        id: null,
+        nome: b.nome,
+        categoria: b.categoria,
+        status: b.status,
+        obrigatorio: b.obrigatorio,
+        data_validade: b.data_validade,
+        descricao: b.descricao,
+        observacoes: b.observacoes,
+        origem: 'base',
+      });
+    }
+    return Array.from(porNome.values());
+  }, [documentos, base]);
 
   /**
    * Garante que a listagem exista ao abrir a aba: se alguma seção está
@@ -131,13 +173,39 @@ export function DocumentosTab({ licitacaoId, clienteId, declaracaoTemplates, gen
     toast.success('Documento adicionado!');
   };
 
-  const handleToggle = async (doc: DocumentoChecklist) => {
+  const handleToggle = async (doc: any) => {
     const newStatus = doc.status === 'concluido' ? 'pendente' : 'concluido';
-    await supabase.from('licitacao_documentos_checklist').update({ status: newStatus }).eq('id', doc.id);
+    if (doc.id) {
+      const { error } = await supabase
+        .from('licitacao_documentos_checklist')
+        .update({ status: newStatus })
+        .eq('id', doc.id);
+      if (error) {
+        toast.error(`Não foi possível salvar: ${error.message}`);
+        return;
+      }
+    } else {
+      // documento veio da base do cliente (ainda não gravado nesta licitação)
+      const { error } = await supabase.from('licitacao_documentos_checklist').insert({
+        licitacao_id: licitacaoId,
+        nome: doc.nome,
+        categoria: doc.categoria,
+        status: newStatus,
+        obrigatorio: doc.obrigatorio ?? true,
+        descricao: doc.descricao || null,
+        data_validade: doc.data_validade || null,
+        observacoes: doc.observacoes || null,
+      });
+      if (error) {
+        toast.error(`Não foi possível gravar na base: ${error.message}`);
+        return;
+      }
+    }
     fetchDocumentos();
   };
 
   const handleRemove = async (id: string) => {
+    if (!id) return;
     await supabase.from('licitacao_documentos_checklist').delete().eq('id', id);
     fetchDocumentos();
   };
@@ -148,12 +216,12 @@ export function DocumentosTab({ licitacaoId, clienteId, declaracaoTemplates, gen
 
   const docsByCategoria = CATEGORIAS.map(cat => ({
     ...cat,
-    docs: documentos.filter(d => d.categoria === cat.value),
+    docs: listaExibida.filter(d => d.categoria === cat.value),
   }));
 
-  const isDisponivel = (d: DocumentoChecklist) => d.status === 'concluido' || !!d.arquivo_url;
-  const totalConcluidos = documentos.filter(isDisponivel).length;
-  const totalPendentes = documentos.length - totalConcluidos;
+  const isDisponivel = (d: any) => d.status === 'concluido' || !!d.arquivo_url;
+  const totalConcluidos = listaExibida.filter(isDisponivel).length;
+  const totalPendentes = listaExibida.length - totalConcluidos;
 
   if (loading) {
     return <div className="flex justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>;
@@ -191,7 +259,7 @@ export function DocumentosTab({ licitacaoId, clienteId, declaracaoTemplates, gen
         </Button>
       </div>
 
-      {documentos.length === 0 && !erroBase && (
+      {listaExibida.length === 0 && !erroBase && (
         <div className="flex items-center gap-2 rounded-lg border border-amber-300/60 bg-amber-50 dark:bg-amber-950/30 px-4 py-3 text-sm text-amber-800 dark:text-amber-200">
           <AlertCircle className="h-4 w-4 shrink-0" />
           <span className="flex-1">
