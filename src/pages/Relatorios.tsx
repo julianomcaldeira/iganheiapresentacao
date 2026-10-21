@@ -328,8 +328,8 @@ export default function Relatorios() {
           { key: 'status', label: 'Status', type: 'text' },
         ],
         data: [
-          { nome: 'CND Federal', empresa: 'Tech Solutions', dataVencimento: '2024-06-15', status: 'Vencido' },
-          { nome: 'FGTS', empresa: 'Tech Solutions', dataVencimento: '2024-05-20', status: 'Vencido' },
+          { nome: 'CND Federal', empresa: '-', dataVencimento: '-', status: 'Vencido' },
+          { nome: 'FGTS', empresa: '-', dataVencimento: '-', status: 'Vencido' },
         ],
       },
       desempenho: {
