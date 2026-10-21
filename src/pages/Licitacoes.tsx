@@ -603,20 +603,29 @@ export default function LicitacoesPage() {
     setPopulando(true);
     try {
       const totais = { etapas: 0, perguntas: 0, tabelas: 0 };
+      const secoes: Record<string, number> = {};
       const erros: string[] = [];
       for (const lic of alvos) {
         const rel = await popularProcessoLicitatorio(lic.id, profile?.id);
         totais.etapas += rel.etapasPopuladas.length;
         totais.perguntas += rel.perguntasRespondidas;
         totais.tabelas += Object.values(rel.tabelas).reduce((a, b) => a + b, 0);
+        Object.entries(rel.documentosPorSecao || {}).forEach(([k, v]) => {
+          secoes[k] = (secoes[k] || 0) + v;
+        });
         erros.push(...rel.erros.map((e) => `${lic.numero}: ${e}`));
       }
-      console.info('[Popular Exemplo] Relatório:', { alvos: alvos.length, ...totais, erros });
+      console.info('[Popular Exemplo] Relatório:', {
+        alvos: alvos.length,
+        ...totais,
+        documentosPorSecao: secoes,
+        erros,
+      });
       if (erros.length > 0) {
         toast.error(`${erros.length} erro(s) ao popular. Veja o console.`);
       } else {
         toast.success(
-          `${alvos.length} licitação(ões) populada(s) — ${totais.etapas} etapas, ${totais.perguntas} perguntas respondidas pela IA`
+          `${alvos.length} licitação(ões) populada(s) — ${totais.etapas} etapas, ${totais.perguntas} perguntas respondidas pela IA, ${secoes.cnd || 0} CNDs, ${secoes.atestado || 0} atestados, ${secoes.declaracao || 0} declarações, ${secoes.outro || 0} outros`
         );
       }
       await fetchData();

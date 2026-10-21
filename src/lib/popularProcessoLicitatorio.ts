@@ -25,6 +25,7 @@ import {
   gerarLinkPortal,
   gerarRespostaPergunta,
   gerarTarefas,
+  gerarTemplatesDeclaracaoPadrao,
   type ContextoExemplo,
 } from '@/lib/exemplosProcessoLicitatorio';
 
@@ -33,6 +34,8 @@ export interface RelatorioPopular {
   etapasPopuladas: string[];
   etapasSemSuporte: string[];
   tabelas: Record<string, number>;
+  /** Documentos criados por seção da aba Documentos */
+  documentosPorSecao: Record<string, number>;
   erros: string[];
   perguntasRespondidas: number;
 }
@@ -72,6 +75,7 @@ export async function popularProcessoLicitatorio(
   const tabelas: Record<string, number> = {};
   const etapasPopuladas: string[] = [];
   const etapasSemSuporte: string[] = [];
+  let documentosPorSecao: Record<string, number> = {};
 
   // ===== Contexto =====
   const { data: lic, error: licErr } = await supabase
@@ -85,12 +89,13 @@ export async function popularProcessoLicitatorio(
       etapasPopuladas: [],
       etapasSemSuporte: [],
       tabelas,
+      documentosPorSecao: {},
       erros: [`licitação não encontrada: ${licErr?.message ?? 'sem dados'}`],
       perguntasRespondidas: 0,
     };
   }
 
-  const [cfgRes, clienteRes, perfisRes, regrasRes] = await Promise.all([
+  const [cfgRes, clienteRes, perfisRes, regrasRes, templatesRes] = await Promise.all([
     supabase
       .from('licitacao_etapas_config')
       .select('etapa_codigo, ordem, configuracoes')
@@ -105,11 +110,18 @@ export async function popularProcessoLicitatorio(
       .eq('cliente_id', lic.cliente_id)
       .eq('ativo', true)
       .order('ordem'),
+    supabase
+      .from('declaracoes_templates')
+      .select('id, nome')
+      .eq('cliente_id', lic.cliente_id)
+      .eq('ativo', true)
+      .order('nome'),
   ]);
 
   const cfg = cfgRes.data || [];
   const perfis = (perfisRes.data || []).map((p: any) => ({ id: p.id as string, nome: (p.nome as string) || 'Usuário' }));
   const regras = (regrasRes.data || []) as Array<{ id: string; titulo: string; descricao: string; categoria: string }>;
+  const templatesCliente = (templatesRes.data || []) as Array<{ id: string; nome: string }>;
 
   const ctx: ContextoExemplo = {
     licitacaoId,
@@ -428,9 +440,10 @@ export async function popularProcessoLicitatorio(
     else tabelas.licitacao_produtos = rows.length;
   }
 
-  // ===== 7. Checklist de documentos =====
+  // ===== 7. Documentos por seção (CNDs, Atestados, Declarações, Outros) =====
   {
-    const rows = gerarDocumentosChecklist(ctx).map((d) => ({
+    const docs = gerarDocumentosChecklist(ctx, templatesCliente.map((t) => t.nome));
+    const rows = docs.map((d) => ({
       ...d,
       licitacao_id: licitacaoId,
       verificado_por: d.status === 'concluido' ? perfis[0]?.id ?? null : null,
@@ -438,7 +451,25 @@ export async function popularProcessoLicitatorio(
     }));
     const { error } = await supabase.from('licitacao_documentos_checklist').insert(rows);
     if (error) erros.push(`licitacao_documentos_checklist: ${error.message}`);
-    else tabelas.licitacao_documentos_checklist = rows.length;
+    else {
+      tabelas.licitacao_documentos_checklist = rows.length;
+      // Breakdown por seção (para o relatório)
+      const porSecao: Record<string, number> = {};
+      rows.forEach((r) => { porSecao[r.categoria] = (porSecao[r.categoria] || 0) + 1; });
+      documentosPorSecao = porSecao;
+    }
+  }
+
+  // ===== 7b. Templates de declaração do cliente (seção "Declarações") =====
+  if (templatesCliente.length === 0) {
+    const rows = gerarTemplatesDeclaracaoPadrao(ctx).map((t) => ({
+      ...t,
+      cliente_id: lic.cliente_id,
+      ativo: true,
+    }));
+    const { error } = await supabase.from('declaracoes_templates').insert(rows);
+    if (error) erros.push(`declaracoes_templates: ${error.message}`);
+    else tabelas.declaracoes_templates = rows.length;
   }
 
   // ===== 8. Fluxo de aprovação =====
@@ -595,6 +626,7 @@ export async function popularProcessoLicitatorio(
     etapasPopuladas,
     etapasSemSuporte,
     tabelas,
+    documentosPorSecao,
     erros,
     perguntasRespondidas,
   };

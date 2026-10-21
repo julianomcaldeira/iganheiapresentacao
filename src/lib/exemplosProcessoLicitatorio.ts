@@ -332,7 +332,7 @@ export function gerarConcorrentes(ctx: ContextoExemplo): Array<{
   });
 }
 
-export function gerarDocumentosChecklist(ctx: ContextoExemplo): Array<{
+export interface DocumentoExemplo {
   categoria: string;
   nome: string;
   descricao: string;
@@ -340,72 +340,248 @@ export function gerarDocumentosChecklist(ctx: ContextoExemplo): Array<{
   obrigatorio: boolean;
   data_validade: string;
   observacoes: string;
-}> {
+}
+
+/**
+ * Documentos de exemplo por SEÇÃO do i-Ganhei (aba Documentos da licitação).
+ * As categorias são exatamente as controladas pela UI:
+ *   cnd        -> CNDs (Certidões Negativas)
+ *   atestado   -> Atestados de Capacidade Técnica
+ *   declaracao -> Declarações
+ *   outro      -> Outros Documentos
+ */
+export function gerarDocumentosChecklist(
+  ctx: ContextoExemplo,
+  templatesDeclaracao: string[] = []
+): DocumentoExemplo[] {
   const base = new Date();
   const val = (dias: number) => iso(base, dias).slice(0, 10);
-  return [
+
+  const cnd: DocumentoExemplo[] = [
     {
-      categoria: 'juridico',
-      nome: 'Contrato Social e Última Alteração',
-      descricao: 'Documento comprobatório do registro e da atividade da empresa.',
-      status: 'concluido',
-      obrigatorio: true,
-      data_validade: val(720),
-      observacoes: 'Verificado por Andre Santos em 12/10/2026.',
-    },
-    {
-      categoria: 'fiscal',
-      nome: 'Certidão Negativa de Dívidos com a União',
-      descricao: 'CND Federal, emitida há menos de 30 dias da entrega.',
+      categoria: 'cnd',
+      nome: 'Certidão Negativa de Dívidos com a União (Federal)',
+      descricao: 'CND Federal emitida pela Receita Federal, com código de controle validado.',
       status: 'concluido',
       obrigatorio: true,
       data_validade: val(45),
-      observacoes: 'Emitida via Receita Federal, código de controle validado.',
+      observacoes: 'Emitida via consulta e-CAC em 08/10/2026.',
     },
     {
-      categoria: 'fiscal',
-      nome: 'Certidão de Regularidade do FGTS',
-      descricao: 'CRF da Caixa Econômica Federal.',
+      categoria: 'cnd',
+      nome: 'Certidão Negativa de Dívidos com o Estado',
+      descricao: 'CND Estadual — Secretaria da Fazenda do Estado.',
+      status: 'concluido',
+      obrigatorio: true,
+      data_validade: val(45),
+      observacoes: 'Válida para o CNPJ da licitante e suas filiais.',
+    },
+    {
+      categoria: 'cnd',
+      nome: 'Certidão Negativa de Dívidos com o Município',
+      descricao: 'CND Municipal emitida pela Prefeitura do município do órgão licitante.',
+      status: 'pendente',
+      obrigatorio: true,
+      data_validade: val(20),
+      observacoes: 'Pendente: emissão depende do protocolo no portal da prefeitura.',
+    },
+    {
+      categoria: 'cnd',
+      nome: 'Certidão de Regularidade do FGTS (CRF)',
+      descricao: 'CRF emitida pela Caixa Econômica Federal.',
       status: 'concluido',
       obrigatorio: true,
       data_validade: val(45),
       observacoes: 'Compatível com o CNPJ da licitante.',
     },
     {
-      categoria: 'trabalhista',
-      nome: 'Certidão Negativa de Débitos do INSS',
-      descricao: 'CNDT (Certidão de Débitos do Seguro Social) e CNDT baixada do TST.',
+      categoria: 'cnd',
+      nome: 'Certidão Negativa de Débitos do INSS (CNDT)',
+      descricao: 'CNDT emitida pelo portal e-CAC da Receita Federal.',
       status: 'concluido',
       obrigatorio: true,
       data_validade: val(30),
-      observacoes: 'Segunda via emitida pelo portal e-CAC.',
+      observacoes: 'Segunda via gerada em 09/10/2026.',
     },
     {
-      categoria: 'tecnico',
-      nome: 'Atestado de Capacidade Técnica',
-      descricao: 'Atestado emitido por órgão público para objeto compatível, nos últimos 5 anos.',
+      categoria: 'cnd',
+      nome: 'Certidão Negativa de Débitos Trabalhistas (TST)',
+      descricao: 'CNDT do Tribunal Superior do Trabalho, com autenticação no portal do TST.',
+      status: 'pendente',
+      obrigatorio: true,
+      data_validade: val(30),
+      observacoes: 'Pendente: consulta ao portal do TST retornou pendência de homologação.',
+    },
+    {
+      categoria: 'cnd',
+      nome: 'Certidão de Débitos com o Simples Nacional (CG Simples)',
+      descricao: 'Comprovante de situação cadastral no Regime Especial de Simplificação.',
+      status: 'concluido',
+      obrigatorio: false,
+      data_validade: val(180),
+      observacoes: 'Licitante optante pelo Simples Nacional — validade até 04/2027.',
+    },
+  ];
+
+  const atestado: DocumentoExemplo[] = [
+    {
+      categoria: 'atestado',
+      nome: 'Atestado de Capacidade Técnica — Fornecimento de Material Hospitalar',
+      descricao: 'Atestado emitido por órgão público, compatível com o objeto ofertado, nos últimos 5 anos.',
       status: 'concluido',
       obrigatorio: true,
       data_validade: val(365),
-      observacoes: 'Atestado nº 118/2024 — compatibilidade de objeto confirmada.',
+      observacoes: 'Atestado nº 118/2024 — compatibilidade de objeto confirmada pela análise.',
     },
     {
-      categoria: 'tecnico',
+      categoria: 'atestado',
+      nome: 'Atestado de Capacidade Técnica — Fornecimento de Equipamentos com Registro ANVISA',
+      descricao: 'Comprovante de fornecimento anterior de equipamentos com registro ANVISA vigente.',
+      status: 'concluido',
+      obrigatorio: true,
+      data_validade: val(365),
+      observacoes: 'Atestado nº 042/2025 — anexado registro ANVISA do lote ofertado.',
+    },
+    {
+      categoria: 'atestado',
+      nome: 'Atestado de Capacidade Técnica — Serviços de Manutenção e Instalação',
+      descricao: 'Atestado de execução de serviços afins ao contrato, quando exigido pelo edital.',
+      status: 'pendente',
+      obrigatorio: false,
+      data_validade: val(365),
+      observacoes: 'Pendente: só será exigido caso o edital acrescente serviço de instalação ao objeto.',
+    },
+    {
+      categoria: 'atestado',
+      nome: 'Declaração de Equivalência de Objeto Ofertado',
+      descricao: 'Declaração de que o produto ofertado é equivalente ao exigido, com mapeamento item a item.',
+      status: 'pendente',
+      obrigatorio: true,
+      data_validade: val(90),
+      observacoes: 'Pendente: aguardando validação do responsável técnico.',
+    },
+  ];
+
+  const nomesDeclaracao = templatesDeclaracao.length > 0
+    ? templatesDeclaracao
+    : [
+        'Declaração de Inexistência de Vínculo Empregatício',
+        'Declaração de Optante pelo Simples Nacional',
+        'Declaração de Idoneidade',
+        'Declaração de Compromisso de Entrega',
+      ];
+
+  const declaracao: DocumentoExemplo[] = nomesDeclaracao.slice(0, 5).map((nome, i) => ({
+    categoria: 'declaracao',
+    nome,
+    descricao: 'Declaração assinada digitalmente pelo representante legal da licitante.',
+    status: i === nomesDeclaracao.slice(0, 5).length - 1 ? 'pendente' : 'concluido',
+    obrigatorio: true,
+    data_validade: val(90),
+    observacoes:
+      i === nomesDeclaracao.slice(0, 5).length - 1
+        ? 'Pendente: assinar digitalmente antes do protocolo.'
+        : 'Gerada a partir do template do cliente e assinada.',
+  }));
+
+  const outro: DocumentoExemplo[] = [
+    {
+      categoria: 'outro',
+      nome: 'Procuração do Representante Legal',
+      descricao: 'Instrumento de procuração outorgada à pessoa que assinará a proposta.',
+      status: 'concluido',
+      obrigatorio: true,
+      data_validade: val(180),
+      observacoes: 'Publicada em Diário Oficial, com firma reconhecida.',
+    },
+    {
+      categoria: 'outro',
+      nome: 'Documento de Identificação do Representante Legal',
+      descricao: 'Copia do documento de identidade do signatário da proposta.',
+      status: 'concluido',
+      obrigatorio: true,
+      data_validade: val(1825),
+      observacoes: 'Conferido com o cadastro da empresa.',
+    },
+    {
+      categoria: 'outro',
+      nome: 'Comprovante de Inscrição e Situação Cadastral',
+      descricao: 'Comprovante de Inscrição e de Situação Cadastral (Carta Cadastro) da Receita Federal.',
+      status: 'concluido',
+      obrigatorio: true,
+      data_validade: val(180),
+      observacoes: 'Nome legal conferido com a razão social usada na proposta.',
+    },
+    {
+      categoria: 'outro',
       nome: 'Registro ANVISA dos Produtos Ofertados',
-      descricao: 'Comprovante de registro ou cadastro dos itens junto à ANVISA.',
+      descricao: 'Comprovante de registro ou cadastro de cada item ofertado junto à ANVISA.',
       status: 'pendente',
       obrigatorio: true,
       data_validade: val(180),
       observacoes: 'Pendente: depende do registro de 1 item do lote. Responsável: Coordenação Farmacêutica.',
     },
+  ];
+
+  return [...cnd, ...atestado, ...declaracao, ...outro];
+}
+
+/** Templates de declaração padrão (usados quando o cliente não tem nenhum). */
+export function gerarTemplatesDeclaracaoPadrao(ctx: ContextoExemplo): Array<{
+  nome: string;
+  titulo: string;
+  conteudo: string;
+  variaveis: string[];
+}> {
+  return [
     {
-      categoria: 'proposta',
-      nome: 'Proposta Comercial Assinada',
-      descricao: 'Proposta em PDF assinada digitalmente, gerada pela etapa de proposta.',
-      status: 'concluido',
-      obrigatorio: true,
-      data_validade: val(90),
-      observacoes: 'Gerada pela IA e assinada pelo responsável técnico.',
+      nome: 'Declaração de Inexistência de Vínculo Empregatício',
+      titulo: 'Declaração de Inexistência de Vínculo Empregatício',
+      conteudo:
+        `DECLARAÇÃO DE INEXISTÊNCIA DE VÍNCULO EMPREGATÍCIO\n\n` +
+        `Eu, ______________________, portador(a) do RG nº ______________ e CPF nº ______________________, ` +
+        `na qualidade de representante legal da empresa {empresa_razao_social}, inscrita no CNPJ nº {empresa_cnpj}, ` +
+        `declaro, para os fins da Licitação nº {licitacao_numero}, promovida pelo {licitacao_orgao}, que a empresa ` +
+        `não mantém vínculo empregatício com o órgão licitante, não Sendo-lhe aplicável a vedação do art. 9º da Lei nº 14.133/2021.\n\n` +
+        `Local e data: {data_atual}.`,
+      variaveis: ['{empresa_razao_social}', '{empresa_cnpj}', '{licitacao_numero}', '{licitacao_orgao}', '{data_atual}'],
+    },
+    {
+      nome: 'Declaração de Optante pelo Simples Nacional',
+      titulo: 'Declaração de Optante pelo Simples Nacional',
+      conteudo:
+        `DECLARAÇÃO DE OPÇÃO PELO SIMPLES NACIONAL\n\n` +
+        `A empresa {empresa_razao_social}, inscrita no CNPJ nº {empresa_cnpj}, declara estar enquadrada no Regime ` +
+        `Especial de Simplificação Tributária (Simples Nacional), nos termos do art. 30 da Lei nº 14.133/2021, ` +
+        `para fins de participação na Licitação nº {licitacao_numero} ({licitacao_orgao}).\n\n` +
+        `Local e data: {data_atual}.`,
+      variaveis: ['{empresa_razao_social}', '{empresa_cnpj}', '{licitacao_numero}', '{licitacao_orgao}', '{data_atual}'],
+    },
+    {
+      nome: 'Declaração de Idoneidade',
+      titulo: 'Declaração de Idoneidade',
+      conteudo:
+        `DECLARAÇÃO DE IDONEIDADE\n\n` +
+        `Eu, ______________________, portador(a) do RG nº ______________ e CPF nº ______________________, ` +
+        `na qualidade de representante legal da empresa {empresa_razao_social}, inscrita no CNPJ nº {empresa_cnpj}, ` +
+        `declaro, para os fins da Licitação nº {licitacao_numero}, promovida pelo {licitacao_orgao}, que a empresa: ` +
+        `(a) não possui insanidade, falência ou liquidação; (b) não está incursa em penalidade; ` +
+        `(c) não possui vínculo empregatício com o órgão licitante; e (d) possui registros (cadastro) de ` +
+        `regularidade fiscal, trabalhista e técnica de habilitação.\n\n` +
+        `Local e data: {data_atual}.`,
+      variaveis: ['{empresa_razao_social}', '{empresa_cnpj}', '{licitacao_numero}', '{licitacao_orgao}', '{data_atual}'],
+    },
+    {
+      nome: 'Declaração de Compromisso de Entrega',
+      titulo: 'Declaração de Compromisso de Entrega',
+      conteudo:
+        `DECLARAÇÃO DE COMPROMISSO DE ENTREGA\n\n` +
+        `A empresa {empresa_razao_social}, inscrita no CNPJ nº {empresa_cnpj}, declara compromisso com o ` +
+        `prazo de entrega de 30 (trinta) dias corridos contado do empenho, para todos os itens ofertados na ` +
+        `Licitação nº {licitacao_numero}, promovida pelo {licitacao_orgao}, mantendo a validade da proposta por ` +
+        `90 (noventa) dias.\n\n` +
+        `Local e data: {data_atual}.`,
+      variaveis: ['{empresa_razao_social}', '{empresa_cnpj}', '{licitacao_numero}', '{licitacao_orgao}', '{data_atual}'],
     },
   ];
 }
