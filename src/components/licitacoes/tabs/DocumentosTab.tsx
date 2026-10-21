@@ -49,10 +49,39 @@ export function DocumentosTab({ licitacaoId, clienteId, declaracaoTemplates, gen
   const [novaCategoria, setNovaCategoria] = useState('cnd');
   const [expandedCats, setExpandedCats] = useState<Record<string, boolean>>({ cnd: true, atestado: true, declaracao: true, outro: true });
   const [sincronizando, setSincronizando] = useState(false);
+  const [tentativas, setTentativas] = useState(0);
+  const [erroBase, setErroBase] = useState<string | null>(null);
 
   useEffect(() => {
     fetchDocumentos();
-  }, [licitacaoId]);
+  }, [licitacaoId, tentativas]);
+
+  /**
+   * Garante que a listagem exista ao abrir a aba: se alguma seção está
+   * vazia (ou os documentos estão com categoria inválida), sincroniza a
+   * base do cliente e recarrega.
+   */
+  useEffect(() => {
+    if (loading || tentativas > 2) return;
+    const secoesVazias = CATEGORIAS.some((c) => !documentos.some((d) => d.categoria === c.value));
+    if (!secoesVazias) {
+      setErroBase(null);
+      return;
+    }
+    let ativo = true;
+    (async () => {
+      const rel = await garantirDocumentosLicitacao([{ id: licitacaoId, cliente_id: clienteId }]);
+      if (!ativo) return;
+      console.info('[Documentos] Garantia automática na aba:', rel);
+      if (rel.erros.length > 0) {
+        setErroBase(rel.erros[0]);
+      } else if (rel.documentosInseridos > 0 || rel.documentosReclassificados > 0) {
+        setErroBase(null);
+        setTentativas((t) => t + 1);
+      }
+    })();
+    return () => { ativo = false; };
+  }, [loading, documentos, licitacaoId, clienteId, tentativas]);
 
   /** Sincroniza a base de documentos do cliente nesta licitação. */
   const handleSincronizar = async () => {
@@ -70,6 +99,7 @@ export function DocumentosTab({ licitacaoId, clienteId, declaracaoTemplates, gen
         );
       }
       await fetchDocumentos();
+      setTentativas((t) => t + 1);
     } catch (e: any) {
       console.error('[Documentos] Erro na sincronização:', e);
       toast.error(e?.message || 'Erro ao sincronizar a base de documentos');
@@ -161,13 +191,20 @@ export function DocumentosTab({ licitacaoId, clienteId, declaracaoTemplates, gen
         </Button>
       </div>
 
-      {documentos.length === 0 && (
+      {documentos.length === 0 && !erroBase && (
         <div className="flex items-center gap-2 rounded-lg border border-amber-300/60 bg-amber-50 dark:bg-amber-950/30 px-4 py-3 text-sm text-amber-800 dark:text-amber-200">
           <AlertCircle className="h-4 w-4 shrink-0" />
           <span className="flex-1">
             Nenhum documento na listagem desta licitação. Clique em “Sincronizar base” para
             importar a base de documentos do cliente.
           </span>
+        </div>
+      )}
+
+      {erroBase && (
+        <div className="rounded-lg border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+          <p className="font-medium">Não foi possível montar a base de documentos desta licitação:</p>
+          <p className="mt-1 font-mono text-xs break-words">{erroBase}</p>
         </div>
       )}
 

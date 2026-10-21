@@ -352,7 +352,8 @@ export interface DocumentoExemplo {
  */
 export function gerarDocumentosChecklist(
   ctx: ContextoExemplo,
-  templatesDeclaracao: string[] = []
+  templatesDeclaracao: string[] = [],
+  docsExtras: Array<{ categoria: string; nome: string; descricao: string; obrigatorio: boolean }> = []
 ): DocumentoExemplo[] {
   const base = new Date();
   const val = (dias: number) => iso(base, dias).slice(0, 10);
@@ -523,7 +524,18 @@ export function gerarDocumentosChecklist(
     },
   ];
 
-  return [...cnd, ...atestado, ...declaracao, ...outro];
+  // Documentos extras do perfil setorial do cliente
+  const extras: DocumentoExemplo[] = docsExtras.map((d) => ({
+    categoria: d.categoria,
+    nome: d.nome,
+    descricao: d.descricao,
+    status: 'pendente',
+    obrigatorio: d.obrigatorio,
+    data_validade: val(180),
+    observacoes: 'Documento específico do setor de atuação do cliente.',
+  }));
+
+  return [...cnd, ...atestado, ...declaracao, ...outro, ...extras];
 }
 
 /** Templates de declaração padrão (usados quando o cliente não tem nenhum). */

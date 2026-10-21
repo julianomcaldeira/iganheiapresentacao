@@ -35,6 +35,7 @@ import {
   aplicarOrganizacaoBase,
   type SimulacaoOrganizacao,
 } from '@/lib/organizarBaseLicitacoes';
+import { aplicarCenariosAClientes } from '@/lib/cenariosCliente';
 import { 
   Plus, Search, Trash2, Play, CheckCircle, Clock, AlertCircle, FileText, 
   Building2, Calendar, DollarSign, ChevronRight, X, Download, ThumbsUp, 
@@ -649,6 +650,35 @@ export default function LicitacoesPage() {
     setLoading(false);
   };
 
+
+  /**
+   * Aplica um cenário distinto por cliente (etapas, regras/perguntas,
+   * templates de declaração e palavras-chave) e replica a base de
+   * documentos de cada um.
+   */
+  const handleAplicarCenarios = async () => {
+    setPopulando(true);
+    try {
+      const rel = await aplicarCenariosAClientes();
+      console.info('[Cenários] Relatório:', rel);
+      const relDocs = await garantirDocumentosDeTodosOsClientes();
+      console.info('[Cenários] Documentos:', relDocs);
+      if (rel.erros.length > 0) {
+        toast.error(`Cenários aplicados com ${rel.erros.length} erro(s) — ${rel.erros[0]}`);
+      } else {
+        toast.success(
+          `Cenários aplicados — ${rel.clientes} cliente(s), ${rel.etapas} etapas, ${rel.regras} perguntas de edital, ${rel.templates} templates`
+        );
+      }
+      await fetchData();
+      setRefreshToken((t) => t + 1);
+    } catch (e: any) {
+      console.error('[Cenários] Erro:', e);
+      toast.error(e?.message || 'Erro ao aplicar os cenários');
+    } finally {
+      setPopulando(false);
+    }
+  };
 
   /**
    * Organiza a base: distribui as licitações entre os clientes e garante
@@ -1350,6 +1380,10 @@ export default function LicitacoesPage() {
                     </DropdownMenuItem>
                   )}
                   <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={handleAplicarCenarios}>
+                    <Sparkles className="h-4 w-4 mr-2" />
+                    Aplicar cenário diferente por cliente
+                  </DropdownMenuItem>
                   <DropdownMenuItem onClick={handleAbrirOrganizacao}>
                     <Users className="h-4 w-4 mr-2" />
                     Organizar base: distribuir licitações entre os clientes

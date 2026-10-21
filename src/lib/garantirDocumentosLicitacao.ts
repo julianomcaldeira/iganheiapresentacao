@@ -26,6 +26,7 @@
  */
 import { supabase } from '@/integrations/supabase/client';
 import { gerarDocumentosChecklist, type ContextoExemplo } from '@/lib/exemplosProcessoLicitatorio';
+import { inferirPerfil, docsExtrasDoPerfil } from '@/lib/cenariosCliente';
 
 export const SECOES_DOCUMENTOS = ['cnd', 'atestado', 'declaracao', 'outro'] as const;
 export type SecaoDocumento = (typeof SECOES_DOCUMENTOS)[number];
@@ -224,7 +225,11 @@ export async function garantirDocumentosLicitacao(
       clienteNome: nomeCliente.get(clienteId) || 'Licitante',
       ano: new Date().getFullYear(),
     };
-    const padrao = gerarDocumentosChecklist(ctx, []);
+    const padrao = gerarDocumentosChecklist(
+      ctx,
+        [],
+        docsExtrasDoPerfil(inferirPerfil({ nome: nomeCliente.get(clienteId) || '' }))
+    );
     for (const doc of padrao) {
       if (!SECOES_DOCUMENTOS.every((s) => secoesPresentes.has(s)) && secoesPresentes.has(doc.categoria)) {
         // seção já tem documento do cliente — não duplicar com o padrão
