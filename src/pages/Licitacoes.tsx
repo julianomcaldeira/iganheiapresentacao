@@ -30,12 +30,17 @@ import { LicitacaoProcessFlow } from '@/components/licitacoes/LicitacaoProcessFl
 import { ensureEtapasEmLote } from '@/lib/ensureEtapas';
 import { popularProcessoLicitatorio, popularExemplosPendentes } from '@/lib/popularProcessoLicitatorio';
 import { garantirDocumentosDeTodosOsClientes } from '@/lib/garantirDocumentosLicitacao';
+import {
+  simularOrganizacaoBase,
+  aplicarOrganizacaoBase,
+  type SimulacaoOrganizacao,
+} from '@/lib/organizarBaseLicitacoes';
 import { 
   Plus, Search, Trash2, Play, CheckCircle, Clock, AlertCircle, FileText, 
   Building2, Calendar, DollarSign, ChevronRight, X, Download, ThumbsUp, 
   ThumbsDown, Eye, ExternalLink, TrendingUp, TrendingDown, MoreVertical,
   Filter, Upload, Loader2, FileSpreadsheet, SlidersHorizontal, ChevronDown,
-  Brain, Sparkles, RefreshCw, Maximize2, Minimize2, MessageCircle, Trophy
+  Brain, Sparkles, RefreshCw, Maximize2, Minimize2, MessageCircle, Trophy, Users
 } from 'lucide-react';
 import { format } from 'date-fns';
 import {
@@ -126,6 +131,9 @@ export default function LicitacoesPage() {
   const [populando, setPopulando] = useState(false);
   const [refreshToken, setRefreshToken] = useState(0);
   const autoPopularRef = useRef(false);
+  const [showOrganizarDialog, setShowOrganizarDialog] = useState(false);
+  const [simulacao, setSimulacao] = useState<SimulacaoOrganizacao | null>(null);
+  const [organizando, setOrganizando] = useState(false);
   
   const [licitacaoProdutos, setLicitacaoProdutos] = useState<LicitacaoProduto[]>([]);
   const [showAddProduto, setShowAddProduto] = useState(false);
@@ -641,6 +649,56 @@ export default function LicitacoesPage() {
     setLoading(false);
   };
 
+
+  /**
+   * Organiza a base: distribui as licitações entre os clientes e garante
+   * a estrutura mínima (etapas, templates de declaração, empresas).
+   */
+  const handleAbrirOrganizacao = async () => {
+    setOrganizando(true);
+    try {
+      const sim = await simularOrganizacaoBase();
+      setSimulacao(sim);
+      setShowOrganizarDialog(true);
+    } catch (e: any) {
+      console.error('[Organizar Base] Erro na simulação:', e);
+      toast.error(e?.message || 'Erro ao simular a organização da base');
+    } finally {
+      setOrganizando(false);
+    }
+  };
+
+  const handleAplicarOrganizacao = async () => {
+    if (!simulacao) return;
+    setOrganizando(true);
+    try {
+      const rel = await aplicarOrganizacaoBase(simulacao);
+      console.info('[Organizar Base] Relatório:', rel);
+      setShowOrganizarDialog(false);
+      setSimulacao(null);
+
+      // base de documentos + exemplos para os clientes reorganizados
+      const relDocs = await garantirDocumentosDeTodosOsClientes();
+      console.info('[Organizar Base] Documentos:', relDocs);
+
+      if (rel.erros.length > 0) {
+        toast.error(
+          `Base reorganizada (${rel.aplicadas} reatribuições) com ${rel.erros.length} erro(s) — ${rel.erros[0]}`
+        );
+      } else {
+        toast.success(
+          `Base reorganizada — ${rel.aplicadas} licit(ão) reatribuída(s), ${rel.etapasCriadas.length} cliente(s) com etapas, ${rel.templatesCriados.length} com templates, ${rel.empresasCriadas.length} com empresa`
+        );
+      }
+      await fetchData();
+      setRefreshToken((t) => t + 1);
+    } catch (e: any) {
+      console.error('[Organizar Base] Erro ao aplicar:', e);
+      toast.error(e?.message || 'Erro ao reorganizar a base');
+    } finally {
+      setOrganizando(false);
+    }
+  };
 
   /**
    * Sincroniza a base de documentos (CNDs, Atestados, Declarações, Outros)
@@ -1292,6 +1350,10 @@ export default function LicitacoesPage() {
                     </DropdownMenuItem>
                   )}
                   <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={handleAbrirOrganizacao}>
+                    <Users className="h-4 w-4 mr-2" />
+                    Organizar base: distribuir licitações entre os clientes
+                  </DropdownMenuItem>
                   <DropdownMenuItem onClick={handleSincronizarBaseDocumentos}>
                     <RefreshCw className="h-4 w-4 mr-2" />
                     Sincronizar base de documentos (todos os clientes)
@@ -1504,6 +1566,127 @@ export default function LicitacoesPage() {
           itemsPerPage={itemsPerPage} 
         />
       </div>
+
+      {/* Dialog Organizar Base */}
+      <Dialog open={showOrganizarDialog} onOpenChange={setShowOrganizarDialog}>
+        <DialogContent className="max-w-4xl">
+          <DialogHeader>
+            <DialogTitle>Organizar base de licitações</DialogTitle>
+            <p className="text-sm text-muted-foreground">
+              Distribui as {simulacao?.totalLicitacoes ?? 0} licitações da base entre os{' '}
+              {simulacao?.clientes.length ?? 0} clientes ativos, priorizando o encaixe pelas
+              palavras-chave de cada cliente. Clientes que ficarem sem etapas, templates de
+              declaração ou empresa também são completados.
+            </p>
+          </DialogHeader>
+
+          <div className="max-h-[60vh] overflow-y-auto space-y-4 pr-2">
+            {simulacao && (
+              <>
+                <div className="rounded-lg border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Cliente</TableHead>
+                        <TableHead className="text-right">Hoje</TableHead>
+                        <TableHead className="text-right">Depois</TableHead>
+                        <TableHead className="text-right">Reatribuições</TableHead>
+                        <TableHead>Palavras-chave</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {simulacao.clientes.map((c) => {
+                        const reatribuicoes = simulacao.mudancas.filter(
+                          (m) => m.clienteNovo === c.nome
+                        ).length;
+                        return (
+                          <TableRow key={c.id}>
+                            <TableCell className="font-medium">
+                              {c.nome}
+                              {c.novas && (
+                                <Badge variant="outline" className="ml-2 text-[10px]">
+                                  novo
+                                </Badge>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-right">{c.licitacoesAtuais}</TableCell>
+                            <TableCell className="text-right font-semibold">{c.alvo}</TableCell>
+                            <TableCell className="text-right">
+                              {reatribuicoes > 0 ? (
+                                <span className="text-amber-600 font-medium">{reatribuicoes}</span>
+                              ) : (
+                                <span className="text-muted-foreground">—</span>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-xs text-muted-foreground">
+                              {c.palavras_positivas.length > 0
+                                ? c.palavras_positivas.slice(0, 5).join(', ')
+                                : 'sem palavras-chave'}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
+
+                {simulacao.mudancas.length > 0 && (
+                  <div className="rounded-lg border">
+                    <div className="p-3 border-b bg-muted/30">
+                      <p className="text-sm font-semibold">
+                        Reatribuições ({simulacao.mudancas.length})
+                      </p>
+                    </div>
+                    <div className="max-h-56 overflow-y-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Licitação</TableHead>
+                            <TableHead>Objeto</TableHead>
+                            <TableHead>De</TableHead>
+                            <TableHead>Para</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {simulacao.mudancas.map((m) => (
+                            <TableRow key={m.licitacaoId}>
+                              <TableCell className="font-mono text-xs">{m.numero}</TableCell>
+                              <TableCell className="text-xs max-w-[280px] truncate">
+                                {m.objeto}
+                              </TableCell>
+                              <TableCell className="text-xs text-muted-foreground">
+                                {m.clienteAtual || '—'}
+                              </TableCell>
+                              <TableCell className="text-xs font-medium">{m.clienteNovo}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowOrganizarDialog(false)} disabled={organizando}>
+              Cancelar
+            </Button>
+            <Button onClick={handleAplicarOrganizacao} disabled={organizando}>
+              {organizando ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Aplicando...
+                </>
+              ) : (
+                <>
+                  <Users className="h-4 w-4 mr-2" /> Aplicar organização
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Dialog Nova Licitação */}
       <Dialog open={showNewDialog} onOpenChange={setShowNewDialog}>
