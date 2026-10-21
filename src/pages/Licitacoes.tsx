@@ -36,6 +36,8 @@ import {
   type SimulacaoOrganizacao,
 } from '@/lib/organizarBaseLicitacoes';
 import { aplicarCenariosAClientes } from '@/lib/cenariosCliente';
+import { aplicarCenariosPorEmpresa } from '@/lib/cenariosEmpresa';
+import { popularCertidoesEmpresas } from '@/lib/popularCertidoesEmpresas';
 import { 
   Plus, Search, Trash2, Play, CheckCircle, Clock, AlertCircle, FileText, 
   Building2, Calendar, DollarSign, ChevronRight, X, Download, ThumbsUp, 
@@ -655,6 +657,53 @@ export default function LicitacoesPage() {
     setLoading(false);
   };
 
+
+  /**
+   * Prepara toda a base de demonstração:
+   * 1. certidões de cada empresa (com uma vencida);
+   * 2. cenário de execução distinto por empresa;
+   * 3. base de documentos replicada nas licitações;
+   * 4. processo licitatório populado (etapas, IA, peças, resultado).
+   */
+  const handlePrepararBaseDemo = async () => {
+    setPopulando(true);
+    try {
+      // 1. Certidões de cada empresa (com pelo menos uma vencida)
+      const cert = await popularCertidoesEmpresas();
+      console.info('[Base Demo] Certidões:', cert);
+
+      // 2. Processo licitatório populado (etapas, IA, peças, resultado)
+      const proc = await popularExemplosPendentes(
+        licitacoes.map((l) => ({ id: l.id, numero: l.numero })),
+        profile?.id
+      );
+      console.info('[Base Demo] Processo:', proc);
+
+      // 3. Cenário de execução distinto por empresa (aplicado por último)
+      const cen = await aplicarCenariosPorEmpresa();
+      console.info('[Base Demo] Cenários por empresa:', cen);
+
+      // 4. Base de documentos replicada nas licitações
+      const docs = await garantirDocumentosDeTodosOsClientes();
+      console.info('[Base Demo] Documentos:', docs);
+
+      const erros = [...cert.erros, ...cen.erros, ...docs.erros, ...proc.erros];
+      if (erros.length > 0) {
+        toast.error(`Base preparada com ${erros.length} erro(s) — ${erros[0]}`);
+      } else {
+        toast.success(
+          `Base pronta — ${cert.certidoes} certidões (${cert.vencidas} vencida(s)) em ${cert.empresas} empresa(s), ${cen.licitacoes} licitações com cenário próprio, ${docs.documentosInseridos} documentos`
+        );
+      }
+      await fetchData();
+      setRefreshToken((t) => t + 1);
+    } catch (e: any) {
+      console.error('[Base Demo] Erro:', e);
+      toast.error(e?.message || 'Erro ao preparar a base de demonstração');
+    } finally {
+      setPopulando(false);
+    }
+  };
 
   /**
    * Aplica um cenário distinto por cliente (etapas, regras/perguntas,
@@ -1385,6 +1434,10 @@ export default function LicitacoesPage() {
                     </DropdownMenuItem>
                   )}
                   <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={handlePrepararBaseDemo}>
+                    <Sparkles className="h-4 w-4 mr-2" />
+                    Preparar base de demonstração (certidões + cenário por empresa)
+                  </DropdownMenuItem>
                   <DropdownMenuItem onClick={handleAplicarCenarios}>
                     <Sparkles className="h-4 w-4 mr-2" />
                     Aplicar cenário diferente por cliente
