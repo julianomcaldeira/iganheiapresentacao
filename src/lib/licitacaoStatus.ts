@@ -46,21 +46,70 @@ export const STATUS_GERAL_LIST: StatusConfig[] = [
   {
     value: 'recusado',
     label: 'Recusado',
-    badgeClass: 'bg-foreground/10 text-foreground dark:bg-white/10 dark:text-white border border-foreground/20',
-    dotClass: 'bg-foreground dark:bg-white',
+    badgeClass: 'bg-foreground/10 text-foreground dark:text-white/10 dark:text-white border border-foreground/20',
+    dotClass: 'bg-foreground dark:text-white',
     textClass: 'text-foreground',
     description: 'Descartado ou perdido',
   },
+  // Valores legados que o banco em produção pode aceitar (schema do Lovable)
+  {
+    value: 'rascunho',
+    label: 'Rascunho',
+    badgeClass: 'bg-muted text-muted-foreground border border-border',
+    dotClass: 'bg-muted-foreground',
+    textClass: 'text-muted-foreground',
+    description: 'Rascunho em preenchimento',
+  },
+  {
+    value: 'aguardando_aprovacao',
+    label: 'Aguardando Aprovação',
+    badgeClass: 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30',
+    dotClass: 'bg-amber-500',
+    textClass: 'text-amber-600 dark:text-amber-400',
+    description: 'Enviada para aprovação interna',
+  },
+  {
+    value: 'concluida',
+    label: 'Finalizado',
+    badgeClass: 'bg-blue-500/15 text-blue-600 dark:text-blue-400 border border-blue-500/30',
+    dotClass: 'bg-blue-500',
+    textClass: 'text-blue-600 dark:text-blue-400',
+    description: 'Processo concluído',
+  },
+  {
+    value: 'ganha',
+    label: 'Ganha',
+    badgeClass: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30',
+    dotClass: 'bg-emerald-500',
+    textClass: 'text-emerald-600 dark:text-emerald-400',
+    description: 'Licitação adjudicada',
+  },
+  {
+    value: 'perdida',
+    label: 'Perdida',
+    badgeClass: 'bg-destructive/15 text-destructive dark:text-red-400 border border-destructive/30',
+    dotClass: 'bg-destructive',
+    textClass: 'text-destructive',
+    description: 'Licitação não adjudicada',
+  },
+  {
+    value: 'cancelada',
+    label: 'Cancelada',
+    badgeClass: 'bg-muted text-muted-foreground border border-border',
+    dotClass: 'bg-muted-foreground',
+    textClass: 'text-muted-foreground',
+    description: 'Licitação cancelada',
+  },
 ];
 
-export const STATUS_GERAL_MAP: Record<LicitacaoStatusGeral, StatusConfig> =
+export const STATUS_GERAL_MAP: Record<string, StatusConfig> =
   STATUS_GERAL_LIST.reduce((acc, s) => {
     acc[s.value] = s;
     return acc;
-  }, {} as Record<LicitacaoStatusGeral, StatusConfig>);
+  }, {} as Record<string, StatusConfig>);
 
 export function getStatusConfig(status: string): { label: string; color: string } {
-  const cfg = STATUS_GERAL_MAP[status as LicitacaoStatusGeral];
+  const cfg = STATUS_GERAL_MAP[status];
   if (cfg) return { label: cfg.label, color: cfg.badgeClass };
   return { label: status, color: 'bg-muted text-muted-foreground' };
 }

@@ -38,7 +38,7 @@ import {
 import { aplicarCenariosAClientes } from '@/lib/cenariosCliente';
 import { aplicarCenariosPorEmpresa } from '@/lib/cenariosEmpresa';
 import { popularCertidoesEmpresas } from '@/lib/popularCertidoesEmpresas';
-import { aplicarStatusVariado } from '@/lib/aplicarStatusVariado';
+import { aplicarStatusVariado, diagnosticarStatus } from '@/lib/aplicarStatusVariado';
 import { 
   Plus, Search, Trash2, Play, CheckCircle, Clock, AlertCircle, FileText, 
   Building2, Calendar, DollarSign, ChevronRight, X, Download, ThumbsUp, 
@@ -106,7 +106,10 @@ import { STATUS_GERAL_LIST, getStatusConfig as getStatusConfigShared } from '@/l
 
 const STATUS_OPTIONS = [
   { value: 'all', label: 'Todos os Status', color: '' },
-  ...STATUS_GERAL_LIST.map(s => ({ value: s.value, label: s.label, color: s.badgeClass })),
+  // remove rótulos duplicados (valores legados com o mesmo label do atual)
+  ...STATUS_GERAL_LIST.filter(
+    (s, i, arr) => arr.findIndex((x) => x.label === s.label) === i
+  ).map((s) => ({ value: s.value, label: s.label, color: s.badgeClass })),
 ];
 
 export default function LicitacoesPage() {
@@ -684,12 +687,48 @@ export default function LicitacoesPage() {
       if (rel.erros.length > 0) {
         toast.error(`${rel.atualizados} atualizada(s), ${rel.erros.length} erro(s) — ${rel.erros[0]}`);
       } else {
-        toast.success(`${rel.atualizados} licitações com status variado — ${resumo}`);
+        const extra = rel.adapted.length
+          ? ` · ${rel.adapted.length} gravado(s) com o equivalente do banco (${rel.adapted[0].desejado}→${rel.adapted[0].gravado})`
+          : '';
+        toast.success(`${rel.atualizados} licitações com status variado — ${resumo}${extra}`);
       }
       await fetchData();
     } catch (e: any) {
       console.error('[Status Demo] Erro:', e);
       toast.error(e?.message || 'Erro ao variar os status');
+    } finally {
+      setPopulando(false);
+    }
+  };
+
+  /**
+   * Diagnóstico do status: grava e relê na hora, para identificar se o
+   * banco reescreve o `status` das licitações.
+   */
+  const handleDiagnosticarStatus = async () => {
+    setPopulando(true);
+    try {
+      const alvo = licitacoes[0];
+      if (!alvo) {
+        toast.error('Nenhuma licitação encontrada');
+        return;
+      }
+      const diag = await diagnosticarStatus(alvo.id);
+      console.info('[Diagnóstico Status]', { licitacao: alvo.numero, ...diag });
+      const aceitos = diag.resultados.filter((r) => r.ok).map((r) => r.valor);
+      const recusados = diag.resultados
+        .filter((r) => !r.ok)
+        .map((r) => `${r.valor}: ${r.erro || `ficou ${r.atual}`}`);
+      if (aceitos.length > 0) {
+        toast.info(
+          `${alvo.numero}: aceitos = ${aceitos.join(', ')} · recusados = ${recusados.length}`
+        );
+      } else {
+        toast.error(`${alvo.numero}: nenhum status aceito — ${recusados[0]}`);
+      }
+    } catch (e: any) {
+      console.error('[Diagnóstico Status] Erro:', e);
+      toast.error(e?.message || 'Erro no diagnóstico');
     } finally {
       setPopulando(false);
     }
@@ -1485,6 +1524,10 @@ export default function LicitacoesPage() {
                   <DropdownMenuItem onClick={handleVariarStatus}>
                     <RefreshCw className="h-4 w-4 mr-2" />
                     Variar status das licitações (demo)
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={handleDiagnosticarStatus}>
+                    <AlertCircle className="h-4 w-4 mr-2" />
+                    Diagnosticar gravação de status
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={handleAplicarCenarios}>
                     <Sparkles className="h-4 w-4 mr-2" />

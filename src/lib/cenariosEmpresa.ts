@@ -17,6 +17,7 @@
  */
 import { supabase } from '@/integrations/supabase/client';
 import { inserirChecklistDocumentos } from '@/lib/inserirChecklistDocumentos';
+import { gravarStatusLicitacao } from '@/lib/statusLicitacao';
 
 export type PerfilEmpresa =
   | 'avancado'
@@ -204,12 +205,12 @@ export async function aplicarCenariosPorEmpresa(
         relatorio.etapasAplicadas += aplicou.etapas;
         relatorio.resultados += aplicou.resultados;
         if (lic) {
-          const { error: statusErr } = await supabase
-            .from('licitacoes')
-            .update({ status: PERFIS_EMPRESA[empresa.perfil].statusLicitacao })
-            .eq('id', licId);
-          if (statusErr) {
-            relatorio.erros.push(`status ${lic.numero}: ${statusErr.message}`);
+          const resStatus = await gravarStatusLicitacao(
+            licId,
+            PERFIS_EMPRESA[empresa.perfil].statusLicitacao
+          );
+          if (!resStatus.ok) {
+            relatorio.erros.push(`status ${lic.numero}: ${resStatus.erro}`);
           }
         }
       }
@@ -229,11 +230,8 @@ export async function aplicarCenariosPorEmpresa(
   ];
   for (let i = 0; i < orfas.length; i++) {
     const status = statusOrfaos[i % statusOrfaos.length];
-    const { error } = await supabase
-      .from('licitacoes')
-      .update({ status })
-      .eq('id', orfas[i].id);
-    if (error) relatorio.erros.push(`status ${orfas[i].numero}: ${error.message}`);
+    const res = await gravarStatusLicitacao(orfas[i].id, status);
+    if (!res.ok) relatorio.erros.push(`status ${orfas[i].numero}: ${res.erro}`);
     else relatorio.licitacoes++;
   }
 
