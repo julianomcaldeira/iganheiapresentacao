@@ -31,9 +31,11 @@ const ETAPAS_INFO: Record<string, {
 interface Props {
   licitacaoId: string;
   clienteId: string;
+  /** Incrementa para forçar nova carga dos dados (ex.: após popular exemplo) */
+  refreshToken?: number;
 }
 
-export function LicitacaoProcessFlow({ licitacaoId, clienteId }: Props) {
+export function LicitacaoProcessFlow({ licitacaoId, clienteId, refreshToken }: Props) {
   const [etapas, setEtapas] = useState<EtapaExecucaoRow[]>([]);
   const [configs, setConfigs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -78,7 +80,7 @@ export function LicitacaoProcessFlow({ licitacaoId, clienteId }: Props) {
     };
     fetch();
     return () => { cancelled = true; };
-  }, [licitacaoId, clienteId]);
+  }, [licitacaoId, clienteId, refreshToken]);
 
   const isCompleted = (status: string) =>
     ['edital_analisado', 'finalizada', 'concluido', 'documentos_analisados', 'proposta_finalizada', 'disputa_finalizada', 'resultado_finalizado', 'custom_concluida'].includes(status);

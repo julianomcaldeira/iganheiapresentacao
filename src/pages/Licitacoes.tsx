@@ -29,6 +29,7 @@ import { LicitacaoEtapasTimeline } from '@/components/licitacoes/LicitacaoEtapas
 import { LicitacaoProcessFlow } from '@/components/licitacoes/LicitacaoProcessFlow';
 import { ensureEtapasEmLote } from '@/lib/ensureEtapas';
 import { popularProcessoLicitatorio } from '@/lib/popularProcessoLicitatorio';
+import { garantirDocumentosLicitacao } from '@/lib/garantirDocumentosLicitacao';
 import { 
   Plus, Search, Trash2, Play, CheckCircle, Clock, AlertCircle, FileText, 
   Building2, Calendar, DollarSign, ChevronRight, X, Download, ThumbsUp, 
@@ -123,6 +124,7 @@ export default function LicitacoesPage() {
   const [camposValores, setCamposValores] = useState<Record<string, string>>({});
   const [selectedEtapaId, setSelectedEtapaId] = useState<string | null>(null);
   const [populando, setPopulando] = useState(false);
+  const [refreshToken, setRefreshToken] = useState(0);
   
   const [licitacaoProdutos, setLicitacaoProdutos] = useState<LicitacaoProduto[]>([]);
   const [showAddProduto, setShowAddProduto] = useState(false);
@@ -575,6 +577,34 @@ export default function LicitacoesPage() {
         }
       }
       
+      // Garante a listagem de documentos nas seções da aba Documentos
+      // (CNDs, Atestados, Declarações, Outros) das licitações da base
+      if (licIds.length > 0) {
+        try {
+          const relDocs = await garantirDocumentosLicitacao(
+            (lRes.data || []).map((l: any) => ({
+              id: l.id,
+              cliente_id: l.cliente_id as string | null,
+            }))
+          );
+          if (relDocs.documentosInseridos > 0 || relDocs.documentosReclassificados > 0 || relDocs.etapasAtualizadas.length > 0) {
+            console.info('[Documentos] Relatório:', {
+              licitacoesSemDocumentos: relDocs.licitacoesSemDocumentos.length,
+              documentosInseridos: relDocs.documentosInseridos,
+              documentosReclassificados: relDocs.documentosReclassificados,
+              etapasAtualizadas: relDocs.etapasAtualizadas.length,
+              erros: relDocs.erros,
+            });
+            setRefreshToken((t) => t + 1);
+          }
+          if (relDocs.erros.length > 0) {
+            console.warn('[Documentos] Erros:', relDocs.erros);
+          }
+        } catch (e) {
+          console.warn('[Documentos] Erro ao garantir documentos:', e);
+        }
+      }
+
       // Load clientes for admin filter
       if (isAdmin) {
         const { data: clientesData } = await supabase.from('clientes').select('id, nome').eq('ativo', true);
@@ -629,6 +659,8 @@ export default function LicitacoesPage() {
         );
       }
       await fetchData();
+      // força a recarga da esteira e das abas (dados mudaram no banco)
+      setRefreshToken((t) => t + 1);
       if (licitacaoId && selectedLicitacao?.id === licitacaoId) {
         await fetchLicitacaoDetail(selectedLicitacao);
       }
@@ -1682,6 +1714,7 @@ export default function LicitacoesPage() {
                 <LicitacaoProcessFlow
                   licitacaoId={selectedLicitacao.id}
                   clienteId={selectedLicitacao.cliente_id}
+                  refreshToken={refreshToken}
                 />
               </div>
 
@@ -1704,6 +1737,7 @@ export default function LicitacoesPage() {
                   declaracaoTemplates={declaracaoTemplates}
                   generateDeclaracao={generateDeclaracao}
                   showChat={true}
+                  refreshToken={refreshToken}
                 />
               </div>
             </>

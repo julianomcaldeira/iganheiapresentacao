@@ -224,9 +224,11 @@ interface LicitacaoEtapasTimelineProps {
   declaracaoTemplates?: any[];
   generateDeclaracao?: (template: any) => string;
   showChat?: boolean;
+  /** Incrementa para forçar nova carga dos dados (ex.: após popular exemplo) */
+  refreshToken?: number;
 }
 
-export function LicitacaoEtapasTimeline({ licitacaoId, clienteId, licitacaoData, onRefresh, declaracaoTemplates, generateDeclaracao, showChat }: LicitacaoEtapasTimelineProps) {
+export function LicitacaoEtapasTimeline({ licitacaoId, clienteId, licitacaoData, onRefresh, declaracaoTemplates, generateDeclaracao, showChat, refreshToken }: LicitacaoEtapasTimelineProps) {
   const [etapas, setEtapas] = useState<EtapaExecucao[]>([]);
   const [configs, setConfigs] = useState<EtapaConfig[]>([]);
   const [loading, setLoading] = useState(true);
@@ -236,7 +238,7 @@ export function LicitacaoEtapasTimeline({ licitacaoId, clienteId, licitacaoData,
 
   useEffect(() => {
     fetchEtapas();
-  }, [licitacaoId, clienteId]);
+  }, [licitacaoId, clienteId, refreshToken]);
 
   const fetchEtapas = async () => {
     setLoading(true);
@@ -546,7 +548,7 @@ export function LicitacaoEtapasTimeline({ licitacaoId, clienteId, licitacaoData,
         const statusInfo = labels[etapa.status] || defaultLabels.nao_iniciada;
 
         return (
-          <TabsContent key={etapa.id} value={etapa.etapa_codigo} className="mt-0">
+          <TabsContent key={`${etapa.id}-${refreshToken ?? 0}`} value={etapa.etapa_codigo} className="mt-0">
             <div className="flex items-center gap-3 mb-4 pb-3 border-b">
               <div
                 className={cn(
@@ -580,7 +582,7 @@ export function LicitacaoEtapasTimeline({ licitacaoId, clienteId, licitacaoData,
       })}
 
       {showChat !== false && (
-        <TabsContent value="chat" className="mt-0">
+        <TabsContent key={`chat-${refreshToken ?? 0}`} value="chat" className="mt-0">
           <div className="flex items-center gap-3 mb-4 pb-3 border-b">
             <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-primary/10">
               <MessageCircle className="h-5 w-5 text-primary" />
@@ -594,7 +596,7 @@ export function LicitacaoEtapasTimeline({ licitacaoId, clienteId, licitacaoData,
         </TabsContent>
       )}
 
-      <TabsContent value="monitoramento" className="mt-0">
+      <TabsContent key={`monitoramento-${refreshToken ?? 0}`} value="monitoramento" className="mt-0">
         <div className="flex items-center gap-3 mb-4 pb-3 border-b">
           <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-primary/10">
             <Radio className="h-5 w-5 text-primary" />
@@ -617,7 +619,7 @@ export function LicitacaoEtapasTimeline({ licitacaoId, clienteId, licitacaoData,
         />
       </TabsContent>
 
-      <TabsContent value="historico-atualizacoes" className="mt-0">
+      <TabsContent key={`historico-${refreshToken ?? 0}`} value="historico-atualizacoes" className="mt-0">
         <div className="flex items-center gap-3 mb-4 pb-3 border-b">
           <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-primary/10">
             <Clock className="h-5 w-5 text-primary" />
