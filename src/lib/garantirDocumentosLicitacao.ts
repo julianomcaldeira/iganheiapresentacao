@@ -181,6 +181,7 @@ export async function buscarBaseDocumentosDoCliente(
 import { supabase } from '@/integrations/supabase/client';
 import { gerarDocumentosChecklist, type ContextoExemplo } from '@/lib/exemplosProcessoLicitatorio';
 import { inferirPerfil, docsExtrasDoPerfil } from '@/lib/cenariosCliente';
+import { inserirChecklistDocumentos } from '@/lib/inserirChecklistDocumentos';
 
 export const SECOES_DOCUMENTOS = ['cnd', 'atestado', 'declaracao', 'outro'] as const;
 export type SecaoDocumento = (typeof SECOES_DOCUMENTOS)[number];
@@ -253,12 +254,14 @@ export async function garantirDocumentosLicitacao(
   const [docsRes, licRes, templatesRes, empresasRes, clientesRes] = await Promise.all([
     supabase
       .from('licitacao_documentos_checklist')
-      .select('id, licitacao_id, nome, descricao, categoria, status, obrigatorio, data_validade, observacoes')
+      .select('*')
       .in('licitacao_id', licIds),
-    supabase
-      .from('licitacoes')
-      .select('id, cliente_id, numero, objeto, orgao, modalidade, portal, valor_estimado')
-      .in('id', licIds),
+    licIds.length > 0
+      ? supabase
+          .from('licitacoes')
+          .select('id, cliente_id, numero, objeto, orgao, modalidade, portal, valor_estimado')
+          .in('id', licIds)
+      : Promise.resolve({ data: [], error: null } as any),
     supabase
       .from('declaracoes_templates')
       .select('cliente_id, nome, titulo')
@@ -438,9 +441,9 @@ export async function garantirDocumentosLicitacao(
         data_validade: d.data_validade,
         observacoes: d.observacoes,
       }));
-      const { error } = await supabase.from('licitacao_documentos_checklist').insert(rows);
-      if (error) {
-        relatorio.erros.push(`licitação ${lic.numero || lic.id}: ${error.message}`);
+      const ins = await inserirChecklistDocumentos(rows);
+      if (!ins.ok) {
+        relatorio.erros.push(`licitação ${lic.numero || lic.id}: ${ins.erro}`);
       } else {
         relatorio.documentosInseridos += rows.length;
         docsPorLic.set(lic.id, [...existentes, ...rows]);

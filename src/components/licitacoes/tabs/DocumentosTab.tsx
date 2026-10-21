@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { garantirDocumentosLicitacao, buscarBaseDocumentosDoCliente, type DocumentoBaseItem } from '@/lib/garantirDocumentosLicitacao';
+import { inserirChecklistDocumentos } from '@/lib/inserirChecklistDocumentos';
 
 interface DocumentoChecklist {
   id: string;
@@ -163,11 +164,17 @@ export function DocumentosTab({ licitacaoId, clienteId, declaracaoTemplates, gen
 
   const handleAdd = async () => {
     if (!novoDoc.trim()) return;
-    const { error } = await supabase
-      .from('licitacao_documentos_checklist')
-      .insert({ licitacao_id: licitacaoId, nome: novoDoc.trim(), categoria: novaCategoria });
+    const res = await inserirChecklistDocumentos([
+      {
+        licitacao_id: licitacaoId,
+        nome: novoDoc.trim(),
+        categoria: novaCategoria,
+        status: 'pendente',
+        obrigatorio: false,
+      },
+    ]);
 
-    if (error) { toast.error('Erro ao adicionar'); return; }
+    if (!res.ok) { toast.error(`Erro ao adicionar: ${res.erro}`); return; }
     setNovoDoc('');
     fetchDocumentos();
     toast.success('Documento adicionado!');
@@ -186,18 +193,20 @@ export function DocumentosTab({ licitacaoId, clienteId, declaracaoTemplates, gen
       }
     } else {
       // documento veio da base do cliente (ainda não gravado nesta licitação)
-      const { error } = await supabase.from('licitacao_documentos_checklist').insert({
-        licitacao_id: licitacaoId,
-        nome: doc.nome,
-        categoria: doc.categoria,
-        status: newStatus,
-        obrigatorio: doc.obrigatorio ?? true,
-        descricao: doc.descricao || null,
-        data_validade: doc.data_validade || null,
-        observacoes: doc.observacoes || null,
-      });
-      if (error) {
-        toast.error(`Não foi possível gravar na base: ${error.message}`);
+      const res = await inserirChecklistDocumentos([
+        {
+          licitacao_id: licitacaoId,
+          nome: doc.nome,
+          categoria: doc.categoria,
+          status: newStatus,
+          obrigatorio: doc.obrigatorio ?? true,
+          descricao: doc.descricao || null,
+          data_validade: doc.data_validade || null,
+          observacoes: doc.observacoes || null,
+        },
+      ]);
+      if (!res.ok) {
+        toast.error(`Não foi possível gravar na base: ${res.erro}`);
         return;
       }
     }

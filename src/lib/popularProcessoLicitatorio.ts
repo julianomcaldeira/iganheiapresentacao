@@ -11,6 +11,7 @@
  */
 import { supabase } from '@/integrations/supabase/client';
 import { ensureEtapasInicializadas } from '@/lib/ensureEtapas';
+import { inserirChecklistDocumentos } from '@/lib/inserirChecklistDocumentos';
 import { gerarMensagensMonitoramento } from '@/lib/monitoramentoSimulado';
 import {
   gerarAnaliseEdital,
@@ -458,8 +459,7 @@ export async function popularProcessoLicitatorio(
     const { data: existentes } = await supabase
       .from('licitacao_documentos_checklist')
       .select('nome')
-      .eq('licitacao_id', licitacaoId);
-    const nomesExistentes = new Set((existentes || []).map((d: any) => normNome(d.nome)));
+      .eq('licitacao_id', licitacaoId);    const nomesExistentes = new Set((existentes || []).map((d: any) => normNome(d.nome)));
     const aInserir = docs.filter((d) => !nomesExistentes.has(normNome(d.nome)));
 
     if (aInserir.length > 0) {
@@ -469,9 +469,10 @@ export async function popularProcessoLicitatorio(
         verificado_por: d.status === 'concluido' ? perfis[0]?.id ?? null : null,
         verificado_em: d.status === 'concluido' ? dataAprov(6) : null,
       }));
-      const { error } = await supabase.from('licitacao_documentos_checklist').insert(rows);
-      if (error) erros.push(`licitacao_documentos_checklist: ${error.message}`);
-      else {
+      const ins = await inserirChecklistDocumentos(rows);
+      if (!ins.ok) {
+        erros.push(`licitacao_documentos_checklist: ${ins.erro}`);
+      } else {
         tabelas.licitacao_documentos_checklist = rows.length;
         const porSecao: Record<string, number> = {};
         rows.forEach((r) => { porSecao[r.categoria] = (porSecao[r.categoria] || 0) + 1; });
