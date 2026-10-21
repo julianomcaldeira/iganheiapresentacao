@@ -57,11 +57,13 @@ export function ClienteQuestionsPanel({ clienteId, licitacaoId, relevancia }: Cl
     setLoading(false);
   };
 
+  const textoDaRegra = (regra: RegraQuestion) => regra.descricao || regra.titulo;
+
   const handleAskQuestion = async (regra: RegraQuestion) => {
     setAskingId(regra.id);
     try {
       // Check if already asked
-      const alreadyAsked = answers.find(a => a.pergunta === regra.descricao);
+      const alreadyAsked = answers.find(a => a.pergunta === textoDaRegra(regra));
       if (alreadyAsked?.resposta) {
         toast.info('Esta pergunta já foi respondida. Veja abaixo.');
         setAskingId(null);
@@ -73,7 +75,7 @@ export function ClienteQuestionsPanel({ clienteId, licitacaoId, relevancia }: Cl
         .from('licitacao_chat')
         .insert({
           licitacao_id: licitacaoId,
-          pergunta: regra.descricao,
+          pergunta: textoDaRegra(regra),
           status: 'processando',
         })
         .select()
@@ -117,15 +119,24 @@ export function ClienteQuestionsPanel({ clienteId, licitacaoId, relevancia }: Cl
     return acc;
   }, {} as Record<string, RegraQuestion[]>);
 
+  const respondidas = regras.filter((r) =>
+    answers.some((a) => a.pergunta === textoDaRegra(r) && a.resposta)
+  ).length;
+
   return (
     <Card>
       <CardContent className="p-5">
         <div className="flex items-center gap-2 mb-4">
-          <HelpCircle className="h-4 w-4 text-primary" />
-          <h3 className="text-sm font-semibold">Perguntas do Cliente</h3>
-          <Badge variant="secondary" className="text-[10px]">
-            {regras.length} regras configuradas
-          </Badge>
+            <HelpCircle className="h-4 w-4 text-primary" />
+            <h3 className="text-sm font-semibold">Perguntas do Edital</h3>
+            <Badge variant="secondary" className="text-[10px]">
+              {regras.length} perguntas configuradas
+            </Badge>
+            {respondidas > 0 && (
+              <Badge className="bg-emerald-500/20 text-emerald-600 text-[10px]">
+                {respondidas} respondida(s) pela IA
+              </Badge>
+            )}
           {relevancia === 'alta' && (
             <Badge className="bg-amber-500/20 text-amber-600 text-[10px]">
               Alta Relevância — análise recomendada
@@ -138,8 +149,8 @@ export function ClienteQuestionsPanel({ clienteId, licitacaoId, relevancia }: Cl
             <div key={categoria}>
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">{categoria}</p>
               <div className="space-y-2">
-                {items.map(regra => {
-                  const answer = answers.find(a => a.pergunta === regra.descricao);
+                    {items.map(regra => {
+                      const answer = answers.find(a => a.pergunta === textoDaRegra(regra));
                   const isAsking = askingId === regra.id;
                   const hasAnswer = answer?.resposta;
 

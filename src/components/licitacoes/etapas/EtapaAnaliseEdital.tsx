@@ -6,9 +6,10 @@ import { Loader2, Brain, FileText, Send, CheckCircle } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { EtapaComponentProps } from './types';
+import { ClienteQuestionsPanel } from '../ClienteQuestionsPanel';
 import DOMPurify from 'dompurify';
 
-export function EtapaAnaliseEdital({ etapa, licitacaoId, licitacaoData, onStatusChange }: EtapaComponentProps) {
+export function EtapaAnaliseEdital({ etapa, licitacaoId, clienteId, licitacaoData, onStatusChange }: EtapaComponentProps) {
   const [analyzing, setAnalyzing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<string | null>(
     (etapa.dados?.analise_resumo as string) || null
@@ -97,6 +98,15 @@ export function EtapaAnaliseEdital({ etapa, licitacaoId, licitacaoData, onStatus
         <p className="text-sm text-muted-foreground">
           Clique em "Analisar com IA" para iniciar a análise automática do edital.
         </p>
+      )}
+
+      {/* Perguntas do Edital respondidas pela IA */}
+      {clienteId && (
+        <ClienteQuestionsPanel
+          clienteId={clienteId}
+          licitacaoId={licitacaoId}
+          relevancia={licitacaoData?.relevancia || 'media'}
+        />
       )}
     </div>
   );

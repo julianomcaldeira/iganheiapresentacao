@@ -20,6 +20,7 @@ export interface EtapaComponentProps {
     data_encerramento?: string;
     data_abertura?: string;
     edital_url?: string;
+    relevancia?: string;
   };
   onStatusChange: (etapaCodigo: string, newStatus: string, dados?: Record<string, any>) => Promise<void>;
   onRefresh: () => void;

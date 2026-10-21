@@ -28,6 +28,7 @@ import { ColumnFilterValue, EMPTY_COLUMN_FILTER, isColumnFilterActive } from '@/
 import { LicitacaoEtapasTimeline } from '@/components/licitacoes/LicitacaoEtapasTimeline';
 import { LicitacaoProcessFlow } from '@/components/licitacoes/LicitacaoProcessFlow';
 import { ensureEtapasEmLote } from '@/lib/ensureEtapas';
+import { popularProcessoLicitatorio } from '@/lib/popularProcessoLicitatorio';
 import { 
   Plus, Search, Trash2, Play, CheckCircle, Clock, AlertCircle, FileText, 
   Building2, Calendar, DollarSign, ChevronRight, X, Download, ThumbsUp, 
@@ -121,6 +122,7 @@ export default function LicitacoesPage() {
   const [licitacaoAprovacoes, setLicitacaoAprovacoes] = useState<LicitacaoAprovacao[]>([]);
   const [camposValores, setCamposValores] = useState<Record<string, string>>({});
   const [selectedEtapaId, setSelectedEtapaId] = useState<string | null>(null);
+  const [populando, setPopulando] = useState(false);
   
   const [licitacaoProdutos, setLicitacaoProdutos] = useState<LicitacaoProduto[]>([]);
   const [showAddProduto, setShowAddProduto] = useState(false);
@@ -528,8 +530,9 @@ export default function LicitacoesPage() {
         (itensData || []).forEach((it: any) => {
           if (!agg[it.licitacao_id]) agg[it.licitacao_id] = { ganhos: 0, perdidos: 0, total: 0 };
           agg[it.licitacao_id].total++;
-          if (it.resultado === 'ganho') agg[it.licitacao_id].ganhos++;
-          if (it.resultado === 'perdido') agg[it.licitacao_id].perdidos++;
+          // aceita as duas grafias usadas no sistema: 'ganho'/'ganhou' e 'perdido'/'perdeu'
+          if (it.resultado === 'ganho' || it.resultado === 'ganhou') agg[it.licitacao_id].ganhos++;
+          if (it.resultado === 'perdido' || it.resultado === 'perdeu') agg[it.licitacao_id].perdidos++;
         });
         setLicitacoesResultados(agg);
       } else {
@@ -584,8 +587,51 @@ export default function LicitacoesPage() {
   };
 
 
-  const fetchLicitacaoDetail = async (lic: Licitacao) => {
-    setSelectedLicitacao(lic);
+  /**
+   * Popula o Processo Licitatório com dados de exemplo (todas as etapas
+   * ativas do cliente + conteúdo de apoio, incluindo as perguntas do
+   * edital respondidas pela IA).
+   */
+  const handlePopularExemplo = async (licitacaoId?: string) => {
+    const alvos = licitacaoId
+      ? licitacoes.filter((l) => l.id === licitacaoId)
+      : licitacoes;
+    if (alvos.length === 0) {
+      toast.error('Nenhuma licitação para popular');
+      return;
+    }
+    setPopulando(true);
+    try {
+      const totais = { etapas: 0, perguntas: 0, tabelas: 0 };
+      const erros: string[] = [];
+      for (const lic of alvos) {
+        const rel = await popularProcessoLicitatorio(lic.id, profile?.id);
+        totais.etapas += rel.etapasPopuladas.length;
+        totais.perguntas += rel.perguntasRespondidas;
+        totais.tabelas += Object.values(rel.tabelas).reduce((a, b) => a + b, 0);
+        erros.push(...rel.erros.map((e) => `${lic.numero}: ${e}`));
+      }
+      console.info('[Popular Exemplo] Relatório:', { alvos: alvos.length, ...totais, erros });
+      if (erros.length > 0) {
+        toast.error(`${erros.length} erro(s) ao popular. Veja o console.`);
+      } else {
+        toast.success(
+          `${alvos.length} licitação(ões) populada(s) — ${totais.etapas} etapas, ${totais.perguntas} perguntas respondidas pela IA`
+        );
+      }
+      await fetchData();
+      if (licitacaoId && selectedLicitacao?.id === licitacaoId) {
+        await fetchLicitacaoDetail(selectedLicitacao);
+      }
+    } catch (e: any) {
+      console.error('[Popular Exemplo] Erro:', e);
+      toast.error(e?.message || 'Erro ao popular o processo licitatório');
+    } finally {
+      setPopulando(false);
+    }
+  };
+
+  const fetchLicitacaoDetail = async (lic: Licitacao) => {    setSelectedLicitacao(lic);
     
     setSelectedEtapaId(null);
     
@@ -1132,6 +1178,28 @@ export default function LicitacoesPage() {
               </DropdownMenu>
               
               
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" disabled={populando}>
+                    {populando ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Sparkles className="h-4 w-4 mr-2" />}
+                    Popular Exemplo
+                    <ChevronDown className="h-4 w-4 ml-2" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => handlePopularExemplo()}>
+                    <Sparkles className="h-4 w-4 mr-2" />
+                    Popular todas as licitações da lista
+                  </DropdownMenuItem>
+                  {selectedLicitacao && (
+                    <DropdownMenuItem onClick={() => handlePopularExemplo(selectedLicitacao.id)}>
+                      <Sparkles className="h-4 w-4 mr-2" />
+                      Popular {selectedLicitacao.numero}
+                    </DropdownMenuItem>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+
               <Button onClick={() => setShowNewDialog(true)} data-page-new-action>
                 <Plus className="h-4 w-4 mr-2" />Nova Licitação
               </Button>
@@ -1562,6 +1630,16 @@ export default function LicitacoesPage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handlePopularExemplo(selectedLicitacao.id)}
+                      disabled={populando}
+                      title="Preencher todas as etapas do processo com dados de exemplo"
+                    >
+                      {populando ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Sparkles className="h-4 w-4 mr-2" />}
+                      Popular Exemplo
+                    </Button>
                     {/* Size presets */}
                     <div className="flex items-center gap-1 border rounded-lg p-0.5 bg-muted/50">
                       {(Object.entries(dialogSizeConfig) as [DialogSizePreset, typeof dialogSizeConfig[DialogSizePreset]][]).map(([key, config]) => (
