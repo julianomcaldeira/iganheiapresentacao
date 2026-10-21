@@ -1,8 +1,19 @@
 import { motion } from 'framer-motion';
-import { AlertCircle, Clock, FileText, Workflow } from 'lucide-react';
+import { AlertCircle, Clock, FileText, Workflow, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { mockPendencias } from '@/data/mockData';
 import { Badge } from '@/components/ui/badge';
+import { useState, useEffect } from 'react';
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
+
+interface Pendencia {
+  id: string;
+  titulo: string;
+  descricao: string;
+  tipo: 'workflow' | 'documento' | 'licitacao';
+  prioridade: 'alta' | 'media' | 'baixa';
+  prazo: string;
+}
 
 const getTypeIcon = (tipo: string) => {
   switch (tipo) {
@@ -29,7 +40,68 @@ const getPriorityColor = (prioridade: string) => {
 };
 
 export function PendenciasCard() {
-  const pendenciasAltas = mockPendencias.filter(p => p.prioridade === 'alta');
+  const { profile, isAdmin } = useAuth();
+  const [pendencias, setPendencias] = useState<Pendencia[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetch = async () => {
+      try {
+        // Tarefas reais do cliente
+        let q = supabase
+          .from('tarefas')
+          .select('id, titulo, descricao, prioridade, data_vencimento, status')
+          .in('status', ['pendente', 'em_andamento'])
+          .order('data_vencimento', { ascending: true })
+          .limit(20);
+        if (!isAdmin && profile?.cliente_id) q = q.eq('cliente_id', profile.cliente_id);
+        const { data: tarefas } = await q;
+
+        const lista: Pendencia[] = (tarefas || []).map((t: any) => ({
+          id: t.id,
+          titulo: t.titulo,
+          descricao: t.descricao || 'Tarefa do plano de ação da licitação',
+          tipo: 'workflow',
+          prioridade: (t.prioridade as Pendencia['prioridade']) || 'media',
+          prazo: t.data_vencimento || new Date().toISOString(),
+        }));
+
+        // Documentos pendentes de habilitação
+        let licQ = supabase.from('licitacoes').select('id, numero, cliente_id');
+        if (!isAdmin && profile?.cliente_id) licQ = licQ.eq('cliente_id', profile.cliente_id);
+        const { data: lics } = await licQ;
+        const licIds = (lics || []).map((l: any) => l.id);
+        if (licIds.length > 0) {
+          const { data: docs } = await supabase
+            .from('licitacao_documentos_checklist')
+            .select('id, nome, licitacao_id, status, data_validade')
+            .in('licitacao_id', licIds)
+            .neq('status', 'concluido')
+            .limit(10);
+          const numeroPorLic = new Map((lics || []).map((l: any) => [l.id, l.numero]));
+          (docs || []).forEach((d: any) => {
+            lista.push({
+              id: d.id,
+              titulo: `Providenciar: ${d.nome}`,
+              descricao: `Licitação ${numeroPorLic.get(d.licitacao_id) || ''} — documento de habilitação pendente`,
+              tipo: 'documento',
+              prioridade: 'alta',
+              prazo: d.data_validade || new Date().toISOString(),
+            });
+          });
+        }
+
+        setPendencias(lista);
+      } catch (e) {
+        console.error('[Dashboard] Erro ao carregar pendências:', e);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetch();
+  }, [profile?.cliente_id, isAdmin]);
+
+  const pendenciasAltas = pendencias.filter((p) => p.prioridade === 'alta');
 
   return (
     <motion.div
@@ -48,12 +120,22 @@ export function PendenciasCard() {
           </p>
         </div>
         <Badge variant="destructive" className="animate-pulse">
-          {mockPendencias.length} total
+          {pendencias.length} total
         </Badge>
       </div>
 
       <div className="space-y-3">
-        {mockPendencias.slice(0, 4).map((pendencia, index) => {
+        {loading && (
+          <div className="flex items-center justify-center py-6">
+            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+          </div>
+        )}
+        {!loading && pendencias.length === 0 && (
+          <p className="text-sm text-muted-foreground text-center py-6">
+            Nenhuma pendência no momento.
+          </p>
+        )}
+        {pendencias.slice(0, 4).map((pendencia, index) => {
           const Icon = getTypeIcon(pendencia.tipo);
           
           return (

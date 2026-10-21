@@ -1,9 +1,23 @@
 import { motion } from 'framer-motion';
-import { ExternalLink, TrendingUp, TrendingDown, Clock } from 'lucide-react';
+import { ExternalLink, TrendingUp, TrendingDown, Clock, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { mockLicitacoes } from '@/data/mockData';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { useState, useEffect } from 'react';
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
+
+interface LicitacaoRecente {
+  id: string;
+  numero: string;
+  objeto: string;
+  orgao: string;
+  modalidade: string;
+  status: string;
+  relevancia: string;
+  valor: number;
+  dataEncerramento: string;
+}
 
 const getStatusConfig = (status: string) => {
   const configs: Record<string, { label: string; className: string }> = {
@@ -37,6 +51,42 @@ const formatCurrency = (value: number) => {
 };
 
 export function LicitacoesRecentes() {
+  const { profile, isAdmin } = useAuth();
+  const [licitacoes, setLicitacoes] = useState<LicitacaoRecente[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetch = async () => {
+      try {
+        let q = supabase
+          .from('licitacoes')
+          .select('id, numero, objeto, orgao, modalidade, status, relevancia, valor_estimado, data_encerramento, cliente_id')
+          .order('created_at', { ascending: false })
+          .limit(5);
+        if (!isAdmin && profile?.cliente_id) q = q.eq('cliente_id', profile.cliente_id);
+        const { data } = await q;
+        setLicitacoes(
+          ((data || []) as any[]).map((l) => ({
+            id: l.id,
+            numero: l.numero,
+            objeto: l.objeto,
+            orgao: l.orgao,
+            modalidade: l.modalidade || 'Pregão Eletrônico',
+            status: l.status,
+            relevancia: l.relevancia || 'media',
+            valor: Number(l.valor_estimado || 0),
+            dataEncerramento: l.data_encerramento || new Date().toISOString(),
+          }))
+        );
+      } catch (e) {
+        console.error('[Dashboard] Erro ao carregar licitações recentes:', e);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetch();
+  }, [profile?.cliente_id, isAdmin]);
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -60,7 +110,17 @@ export function LicitacoesRecentes() {
       </div>
 
       <div className="divide-y divide-border">
-        {mockLicitacoes.map((licitacao, index) => {
+        {loading && (
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+          </div>
+        )}
+        {!loading && licitacoes.length === 0 && (
+          <p className="text-sm text-muted-foreground text-center py-8">
+            Nenhuma licitação cadastrada.
+          </p>
+        )}
+        {licitacoes.map((licitacao, index) => {
           const statusConfig = getStatusConfig(licitacao.status);
           const relevanciaConfig = getRelevanciaConfig(licitacao.relevancia);
           const RelevanciaIcon = relevanciaConfig.icon;

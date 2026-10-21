@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Button } from '@/components/ui/button';
@@ -43,6 +43,8 @@ import { cn } from '@/lib/utils';
 import { ReportBuilder } from '@/components/relatorios/ReportBuilder';
 import { toast } from 'sonner';
 import { exportReport } from '@/lib/exportUtils';
+import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/integrations/supabase/client';
 
 interface Relatorio {
   id: string;
@@ -122,6 +124,7 @@ const tipoConfig: Record<string, { label: string; icon: any }> = {
 };
 
 export default function Relatorios() {
+  const { profile, isAdmin } = useAuth();
   const [categoriaFilter, setCategoriaFilter] = useState('todos');
   const [tipoFilter, setTipoFilter] = useState('todos');
   const [searchTerm, setSearchTerm] = useState('');
@@ -167,6 +170,111 @@ export default function Relatorios() {
       prev.map((r) => (r.id === id ? { ...r, favorito: !r.favorito } : r))
     );
   };
+
+  // Dados REAIS por categoria de relatório
+  const [dadosReais, setDadosReais] = useState<Record<string, { columns: any[]; data: any[] }>>({});
+
+  useEffect(() => {
+    const carregar = async () => {
+      const clienteId = profile?.cliente_id;
+      try {
+        let licQ = supabase
+          .from('licitacoes')
+          .select('numero, orgao, objeto, valor_estimado, status, cliente_id')
+          .order('created_at', { ascending: false })
+          .limit(100);
+        if (!isAdmin && clienteId) licQ = licQ.eq('cliente_id', clienteId);
+        const { data: lics } = await licQ;
+
+        const licitacoes: { columns: any[]; data: any[] } = {
+          columns: [
+            { key: 'numero', label: 'Número', type: 'text' },
+            { key: 'orgao', label: 'Órgão', type: 'text' },
+            { key: 'objeto', label: 'Objeto', type: 'text' },
+            { key: 'valor', label: 'Valor', type: 'currency' },
+            { key: 'status', label: 'Status', type: 'text' },
+          ],
+          data: (lics || []).map((l: any) => ({
+            numero: l.numero,
+            orgao: l.orgao,
+            objeto: l.objeto,
+            valor: Number(l.valor_estimado || 0),
+            status: l.status,
+          })),
+        };
+
+        // Documentos (base real do cliente)
+        let licIds: string[] = [];
+        if (clienteId) {
+          const { data: licsCli } = await supabase.from('licitacoes').select('id').eq('cliente_id', clienteId);
+          licIds = (licsCli || []).map((l: any) => l.id);
+        }
+        let empQ = supabase.from('empresas').select('id, razao_social, cliente_id');
+        if (!isAdmin && clienteId) empQ = empQ.eq('cliente_id', clienteId);
+        const { data: emps } = await empQ;
+        const empresaPorId = new Map((emps || []).map((e: any) => [e.id, e.razao_social]));
+
+        let docs: any[] = [];
+        if (licIds.length > 0) {
+          const { data: checklist } = await supabase
+            .from('licitacao_documentos_checklist')
+            .select('nome, status, data_validade, licitacao_id')
+            .in('licitacao_id', licIds)
+            .limit(100);
+          const { data: licNumeros } = await supabase.from('licitacoes').select('id, numero').in('id', licIds);
+          const numPorLic = new Map((licNumeros || []).map((l: any) => [l.id, l.numero]));
+          docs = (checklist || []).map((d: any) => ({
+            nome: d.nome,
+            empresa: numPorLic.get(d.licitacao_id) || '-',
+            dataVencimento: d.data_validade ? new Date(d.data_validade).toLocaleDateString('pt-BR') : '-',
+            status: d.status === 'concluido' ? 'Válido' : 'Pendente',
+          }));
+        }
+
+        const documentos: { columns: any[]; data: any[] } = {
+          columns: [
+            { key: 'nome', label: 'Documento', type: 'text' },
+            { key: 'empresa', label: 'Licitação', type: 'text' },
+            { key: 'dataVencimento', label: 'Vencimento', type: 'text' },
+            { key: 'status', label: 'Status', type: 'text' },
+          ],
+          data: docs,
+        };
+
+        // Contratos (empenhos do tipo contrato)
+        let conQ = supabase
+          .from('empenhos')
+          .select('numero, orgao_emissor, valor_empenhado, data_emissao, data_vencimento, status, cliente_id')
+          .eq('tipo', 'contrato')
+          .limit(100);
+        if (!isAdmin && clienteId) conQ = conQ.eq('cliente_id', clienteId);
+        const { data: cons } = await conQ;
+        const contratos: { columns: any[]; data: any[] } = {
+          columns: [
+            { key: 'numero', label: 'Número', type: 'text' },
+            { key: 'orgao', label: 'Órgão', type: 'text' },
+            { key: 'valorTotal', label: 'Valor Total', type: 'currency' },
+            { key: 'dataInicio', label: 'Início', type: 'date' },
+            { key: 'dataFim', label: 'Fim', type: 'date' },
+            { key: 'status', label: 'Status', type: 'text' },
+          ],
+          data: (cons || []).map((c: any) => ({
+            numero: c.numero,
+            orgao: c.orgao_emissor,
+            valorTotal: Number(c.valor_empenhado || 0),
+            dataInicio: c.data_emissao,
+            dataFim: c.data_vencimento,
+            status: c.status,
+          })),
+        };
+
+        setDadosReais({ licitacoes, documentos, contratos });
+      } catch (e) {
+        console.error('[Relatórios] Erro ao carregar dados:', e);
+      }
+    };
+    carregar();
+  }, [profile?.cliente_id, isAdmin]);
 
   // Mock data for predefined reports
   const getMockDataForReport = (relatorio: Relatorio) => {
@@ -246,7 +354,7 @@ export default function Relatorios() {
       };
     }
 
-    return mockDataByCategory[relatorio.categoria] || mockDataByCategory.licitacoes;
+    return dadosReais[relatorio.categoria] || mockDataByCategory[relatorio.categoria] || mockDataByCategory.licitacoes;
   };
 
   const handleExport = (relatorio: Relatorio, format: 'csv' | 'excel' | 'pdf') => {

@@ -12,7 +12,6 @@ import { LicitacaoFlowDashboard } from '@/components/dashboard/LicitacaoFlowDash
 import { AprovacaoFlowDashboard } from '@/components/dashboard/AprovacaoFlowDashboard';
 import { useDashboardData, DashboardFilters as Filters } from '@/hooks/useDashboardData';
 import { useAuth } from '@/contexts/AuthContext';
-import { mockMetricas } from '@/data/mockData';
 import { FileText, Target, Clock, CheckCircle, Trophy, DollarSign, FileSignature, AlertTriangle } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
@@ -99,7 +98,7 @@ const Index = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               <MetricCard
                 title="Total de Licitações"
-                value={mockMetricas.totalLicitacoes}
+                value={metrics.totalLicitacoes}
                 change={12}
                 changeType="positive"
                 icon={FileText}
@@ -108,7 +107,7 @@ const Index = () => {
               />
               <MetricCard
                 title="Alta Relevância"
-                value={mockMetricas.licitacoesRelevantes}
+                value={metrics.licitacoesRelevantes}
                 change={8}
                 changeType="positive"
                 icon={Target}
@@ -117,14 +116,14 @@ const Index = () => {
               />
               <MetricCard
                 title="Em Análise"
-                value={mockMetricas.emAnalise}
+                value={metrics.emAnalise}
                 icon={Clock}
                 iconColor="bg-warning"
                 delay={0.2}
               />
               <MetricCard
                 title="Taxa de Sucesso"
-                value={`${mockMetricas.taxaSucesso}%`}
+                value={`${metrics.taxaSucesso}%`}
                 change={5}
                 changeType="positive"
                 icon={Trophy}
@@ -136,7 +135,7 @@ const Index = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               <MetricCard
                 title="Valor Total Ganho"
-                value={formatCurrency(mockMetricas.valorTotalGanho)}
+                value={formatCurrency(metrics.valorTotalGanho)}
                 change={18}
                 changeType="positive"
                 icon={DollarSign}
@@ -145,21 +144,21 @@ const Index = () => {
               />
               <MetricCard
                 title="Contratos Ativos"
-                value={mockMetricas.contratoAtivos}
+                value={metrics.contratoAtivos}
                 icon={FileSignature}
                 iconColor="bg-primary"
                 delay={0.15}
               />
               <MetricCard
                 title="Aprovadas"
-                value={mockMetricas.aprovadas}
+                value={metrics.aprovadas}
                 icon={CheckCircle}
                 iconColor="bg-success"
                 delay={0.2}
               />
               <MetricCard
                 title="Docs Vencendo"
-                value={mockMetricas.documentosVencendo}
+                value={metrics.documentosVencendo}
                 change={-2}
                 changeType="negative"
                 icon={AlertTriangle}
