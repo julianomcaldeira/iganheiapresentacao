@@ -27,6 +27,7 @@ import {
 } from '@/components/ui/select';
 import { toast } from 'sonner';
 import { Loader2, Upload } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
 
 const formSchema = z.object({
   nome: z.string().min(3, 'Nome deve ter pelo menos 3 caracteres'),
@@ -79,16 +80,27 @@ export function NovoDocumentoDialog({
   const onSubmit = async (data: FormData) => {
     setIsSubmitting(true);
     try {
-      // TODO: Implementar integração com banco de dados
-      console.log('Novo documento:', data);
-      
+      // Grava na base de documentos do cliente (tabela do i-Documentei)
+      const { error } = await supabase.from('idocumentei_documentos').insert({
+        empresa_id: data.empresaId,
+        idocumentei_empresa_id: `manual-${data.empresaId}-${Date.now()}`,
+        tipo: data.tipo,
+        nome: data.nome,
+        status: 'valido',
+        data_emissao: data.dataEmissao || null,
+        data_validade: data.dataVencimento || null,
+        dados_raw: { origem: 'manual' },
+      });
+
+      if (error) throw error;
+
       toast.success('Documento cadastrado com sucesso!');
       form.reset();
       onOpenChange(false);
       onSuccess?.();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Erro ao cadastrar documento:', error);
-      toast.error('Erro ao cadastrar documento');
+      toast.error(error?.message || 'Erro ao cadastrar documento');
     } finally {
       setIsSubmitting(false);
     }

@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { MainLayout } from '@/components/layout/MainLayout';
-import { mockDocumentosCompleto, mockClientes } from '@/data/mockDataExtended';
 import { NovoDocumentoDialog } from '@/components/documentos/NovoDocumentoDialog';
 import { IDocumenteiPanel } from '@/components/documentos/IDocumenteiPanel';
 import { Documento } from '@/types';
@@ -115,6 +114,11 @@ export default function Documentos() {
   const [activeTab, setActiveTab] = useState('documentos');
   const [selectedClienteId, setSelectedClienteId] = useState<string>('');
   const [clientes, setClientes] = useState<{ id: string; nome: string }[]>([]);
+  const [empresas, setEmpresas] = useState<
+    Array<{ id: string; cliente_id: string; razao_social: string; nome_fantasia: string | null; cnpj: string | null }>
+  >([]);
+  const [documentos, setDocumentos] = useState<Documento[]>([]);
+  const [carregando, setCarregando] = useState(false);
 
   const effectiveClienteId = isAdmin ? selectedClienteId : profile?.cliente_id;
 
@@ -129,26 +133,131 @@ export default function Documentos() {
     }
   }, [isAdmin]);
 
+  /**
+   * Carrega empresas REAIS do cliente e a base de documentos:
+   * - CNDs do i-Documentei (por empresa);
+   * - documentos do checklist das licitações do cliente (base de habilitação).
+   */
+  const carregarBase = async () => {
+    if (!effectiveClienteId) {
+      setEmpresas([]);
+      setDocumentos([]);
+      return;
+    }
+    setCarregando(true);
+    try {
+      const { data: emp } = await supabase
+        .from('empresas')
+        .select('id, cliente_id, razao_social, nome_fantasia, cnpj')
+        .eq('cliente_id', effectiveClienteId)
+        .eq('ativo', true)
+        .order('razao_social');
+      const listaEmpresas = (emp || []) as any[];
+      setEmpresas(listaEmpresas);
+
+      const empresaIds = listaEmpresas.map((e) => e.id);
+      const { data: licitacoes } = await supabase
+        .from('licitacoes')
+        .select('id')
+        .eq('cliente_id', effectiveClienteId);
+      const licIds = (licitacoes || []).map((l: any) => l.id);
+
+      const [idocRes, checklistRes] = await Promise.all([
+        empresaIds.length > 0
+          ? supabase
+              .from('idocumentei_documentos')
+              .select('id, empresa_id, tipo, nome, status, data_emissao, data_validade')
+              .in('empresa_id', empresaIds)
+          : Promise.resolve({ data: [], error: null } as any),
+        licIds.length > 0
+          ? supabase
+              .from('licitacao_documentos_checklist')
+              .select('id, licitacao_id, nome, categoria, status, data_validade, observacoes')
+              .in('licitacao_id', licIds)
+          : Promise.resolve({ data: [], error: null } as any),
+      ]);
+
+      const hoje = new Date();
+      const statusDe = (validade: string | null, statusBruto?: string | null) => {
+        if (statusBruto) {
+          const s = statusBruto.toLowerCase();
+          if (['vencida', 'vencido', 'expirado'].includes(s)) return 'vencido' as const;
+          if (['processando', 'pendente', 'aguardando'].includes(s)) return 'vencido' as const;
+        }
+        if (!validade) return 'valido' as const;
+        const dias = Math.ceil(
+          (new Date(validade).getTime() - hoje.getTime()) / (1000 * 60 * 60 * 24)
+        );
+        if (dias < 0) return 'vencido' as const;
+        if (dias <= 30) return 'proximo_vencimento' as const;
+        return 'valido' as const;
+      };
+
+      const docs: Documento[] = [];
+
+      // CNDs do i-Documentei
+      (idocRes.data || []).forEach((d: any) => {
+        docs.push({
+          id: d.id,
+          nome: d.nome,
+          tipo: d.tipo || 'CND',
+          empresaId: d.empresa_id,
+          dataEmissao: d.data_emissao || hoje.toISOString(),
+          dataVencimento: d.data_validade || hoje.toISOString(),
+          status: statusDe(d.data_validade, d.status),
+        });
+      });
+
+      // Base de documentos do cliente (checklist das licitações)
+      const vistos = new Set<string>();
+      (checklistRes.data || []).forEach((d: any) => {
+        const chave = `${d.nome}`.toLowerCase();
+        if (vistos.has(chave)) return;
+        vistos.add(chave);
+        docs.push({
+          id: d.id,
+          nome: d.nome,
+          tipo: d.categoria === 'cnd' ? 'CND' : d.categoria === 'atestado' ? 'Atestado' : d.categoria === 'declaracao' ? 'Declaração' : 'Outro',
+          empresaId: listaEmpresas[0]?.id || '',
+          dataEmissao: hoje.toISOString(),
+          dataVencimento: d.data_validade || hoje.toISOString(),
+          status: d.status === 'concluido' ? 'valido' : 'proximo_vencimento',
+        });
+      });
+
+      setDocumentos(docs);
+    } catch (e) {
+      console.error('[Documentos] Erro ao carregar base:', e);
+    } finally {
+      setCarregando(false);
+    }
+  };
+
+  useEffect(() => {
+    carregarBase();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [effectiveClienteId]);
+
   const [columns, setColumns] = useState<ColumnConfig[]>(() =>
     loadColumnsFromStorage('documentos-columns', DOCUMENTOS_DEFAULT_COLUMNS)
   );
   const [sort, setSort] = useState<SortState>({ column: null, direction: null });
 
-  const todasEmpresas = mockClientes.flatMap((c) =>
-    c.empresas.map((e) => ({ id: e.id, nomeFantasia: e.nomeFantasia, razaoSocial: e.razaoSocial, cnpj: e.cnpj }))
-  );
+  const todasEmpresas = empresas.map((e) => ({
+    id: e.id,
+    nomeFantasia: e.nome_fantasia || e.razao_social,
+    razaoSocial: e.razao_social,
+    cnpj: e.cnpj,
+  }));
 
-  const tipos = [...new Set(mockDocumentosCompleto.map((d) => d.tipo))];
+  const tipos = [...new Set(documentos.map((d) => d.tipo))];
 
   const getEmpresaNomeById = (empresaId: string) => {
-    for (const cliente of mockClientes) {
-      const empresa = cliente.empresas.find((e) => e.id === empresaId);
-      if (empresa) return empresa.nomeFantasia;
-    }
-    return 'N/A';
+    const empresa = empresas.find((e) => e.id === empresaId);
+    return empresa ? empresa.nome_fantasia || empresa.razao_social : 'N/A';
   };
 
-  const filteredDocumentos = mockDocumentosCompleto.filter((doc) => {
+  const filteredDocumentos = documentos.filter((doc) => {
     const matchesSearch =
       doc.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
       doc.tipo.toLowerCase().includes(searchTerm.toLowerCase());
@@ -175,10 +284,10 @@ export default function Documentos() {
   });
 
   const stats = {
-    total: mockDocumentosCompleto.length,
-    validos: mockDocumentosCompleto.filter((d) => d.status === 'valido').length,
-    vencidos: mockDocumentosCompleto.filter((d) => d.status === 'vencido').length,
-    vencendo: mockDocumentosCompleto.filter((d) => d.status === 'proximo_vencimento').length,
+    total: documentos.length,
+    validos: documentos.filter((d) => d.status === 'valido').length,
+    vencidos: documentos.filter((d) => d.status === 'vencido').length,
+    vencendo: documentos.filter((d) => d.status === 'proximo_vencimento').length,
   };
 
   const getEmpresaNome = getEmpresaNomeById;
@@ -368,8 +477,8 @@ export default function Documentos() {
             defaultColumns={DOCUMENTOS_DEFAULT_COLUMNS}
             lockedColumns={['acoes']}
           />
-          <Button variant="outline" size="icon">
-            <RefreshCw className="w-4 h-4" />
+          <Button variant="outline" size="icon" onClick={() => carregarBase()} disabled={carregando}>
+            <RefreshCw className={cn('w-4 h-4', carregando && 'animate-spin')} />
           </Button>
           <Button
             className="gradient-primary text-primary-foreground shadow-glow"
@@ -386,6 +495,7 @@ export default function Documentos() {
         open={dialogOpen}
         onOpenChange={setDialogOpen}
         empresas={todasEmpresas}
+        onSuccess={() => carregarBase()}
       />
 
       {/* Preview Dialog */}

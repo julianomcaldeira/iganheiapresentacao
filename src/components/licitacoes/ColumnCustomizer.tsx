@@ -51,7 +51,8 @@ const DEFAULT_COLUMNS: ColumnConfig[] = [
   { id: 'portal', label: 'Portal', visible: false, order: 10, width: '140px' },
   { id: 'etapa_atual', label: 'Etapa Atual', visible: true, order: 11, width: '140px' },
   { id: 'cliente', label: 'Cliente', visible: false, order: 12, width: '140px' },
-  { id: 'acoes', label: 'Ações', visible: true, order: 13, width: '100px' },
+  { id: 'empresa', label: 'Empresa', visible: true, order: 13, width: '180px' },
+  { id: 'acoes', label: 'Ações', visible: true, order: 14, width: '100px' },
 ];
 
 export function getDefaultColumns(defaults?: ColumnConfig[]): ColumnConfig[] {

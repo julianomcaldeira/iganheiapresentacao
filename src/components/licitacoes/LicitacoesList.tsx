@@ -41,6 +41,7 @@ const COLUMN_DESCRIPTIONS: Record<string, string> = {
   portal: 'Portal eletrônico onde a licitação está sendo conduzida.',
   etapa_atual: 'Etapa atual do fluxo de trabalho interno em que a licitação se encontra.',
   cliente: 'Cliente da plataforma ao qual esta licitação pertence.',
+  empresa: 'Empresa do cliente que está licitando (razão social / nome fantasia).',
   acoes: 'Ações disponíveis para esta licitação (visualizar, analisar com IA, etc.).',
 };
 
@@ -67,6 +68,7 @@ interface Licitacao {
   workflow?: { nome: string };
   etapa_atual?: { nome: string; cor: string };
   cliente?: { nome: string };
+  empresa?: { razao_social: string; nome_fantasia: string | null } | null;
   analise_ia?: any;
   analise_ia_status?: string | null;
   analise_ia_data?: string | null;
@@ -466,6 +468,16 @@ export function LicitacoesList({
         return (
           <span className="text-sm text-muted-foreground truncate" title={lic.cliente?.nome}>
             {lic.cliente?.nome || '-'}
+          </span>
+        );
+
+      case 'empresa':
+        return (
+          <span
+            className="text-sm text-muted-foreground truncate"
+            title={lic.empresa?.razao_social}
+          >
+            {lic.empresa?.nome_fantasia || lic.empresa?.razao_social || '-'}
           </span>
         );
       

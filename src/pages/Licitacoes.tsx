@@ -222,6 +222,7 @@ export default function LicitacoesPage() {
       case 'portal': return l.portal || '';
       case 'etapa_atual': return l.etapa_atual?.nome || '';
       case 'cliente': return l.cliente?.nome || '';
+      case 'empresa': return l.empresa?.nome_fantasia || l.empresa?.razao_social || '';
       default: return '';
     }
   }, []);
@@ -355,6 +356,10 @@ export default function LicitacoesPage() {
       case 'cliente':
         aVal = a.cliente?.nome?.toLowerCase() || '';
         bVal = b.cliente?.nome?.toLowerCase() || '';
+        break;
+      case 'empresa':
+        aVal = (a.empresa?.nome_fantasia || a.empresa?.razao_social || '').toLowerCase();
+        bVal = (b.empresa?.nome_fantasia || b.empresa?.razao_social || '').toLowerCase();
         break;
       default:
         return 0;
@@ -505,7 +510,7 @@ export default function LicitacoesPage() {
       // Build queries
       let licitacoesQuery = supabase
         .from('licitacoes')
-        .select('*, workflow:licitacao_workflows(nome), etapa_atual:workflow_etapas!licitacoes_etapa_atual_id_fkey(nome, cor), cliente:clientes(nome)');
+        .select('*, workflow:licitacao_workflows(nome), etapa_atual:workflow_etapas!licitacoes_etapa_atual_id_fkey(nome, cor), cliente:clientes(nome), empresa:empresas(razao_social, nome_fantasia)');
       
       let empresasQuery = supabase.from('empresas').select('id, razao_social, cnpj').eq('ativo', true);
       let produtosQuery = supabase.from('produtos').select('*').eq('ativo', true);

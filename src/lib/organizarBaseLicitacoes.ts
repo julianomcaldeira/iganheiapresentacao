@@ -405,5 +405,57 @@ export async function aplicarOrganizacaoBase(
     }
   }
 
+  // 3. Vincula as licitações às empresas reais do cliente (rodízio)
+  await vincularEmpresas(simulacao.clientes, relatorio);
+
   return relatorio;
+}
+
+/**
+ * Garante que cada licitação aponte para uma das empresas do seu cliente
+ * (rodízio), para que proposta, contrato e assinaturas usem a empresa
+ * correta.
+ */
+async function vincularEmpresas(
+  clientes: Array<{ id: string; licitacoesAtribuidas: string[] }>,
+  relatorio: RelatorioOrganizacao
+) {
+  const clienteIds = clientes.map((c) => c.id);
+  if (clienteIds.length === 0) return;
+
+  const { data: empresas } = await supabase
+    .from('empresas')
+    .select('id, cliente_id, razao_social, nome_fantasia')
+    .in('cliente_id', clienteIds)
+    .eq('ativo', true);
+
+  const porCliente = new Map<string, any[]>();
+  (empresas || []).forEach((e: any) => {
+    if (!porCliente.has(e.cliente_id)) porCliente.set(e.cliente_id, []);
+    porCliente.get(e.cliente_id)!.push(e);
+  });
+
+  const licIds = clientes.flatMap((c) => c.licitacoesAtribuidas);
+  if (licIds.length === 0) return;
+
+  const { data: licRows } = await supabase
+    .from('licitacoes')
+    .select('id, cliente_id, empresa_id, numero')
+    .in('id', licIds);
+
+  const contador = new Map<string, number>();
+  for (const lic of licRows || []) {
+    if (!lic.cliente_id) continue;
+    const lista = porCliente.get(lic.cliente_id) || [];
+    if (lista.length === 0) continue;
+    if (lic.empresa_id) continue; // já vinculado
+    const idx = contador.get(lic.cliente_id) || 0;
+    contador.set(lic.cliente_id, idx + 1);
+    const empresa = lista[idx % lista.length];
+    const { error } = await supabase
+      .from('licitacoes')
+      .update({ empresa_id: empresa.id })
+      .eq('id', lic.id);
+    if (error) relatorio.erros.push(`vincular empresa ${lic.numero}: ${error.message}`);
+  }
 }
