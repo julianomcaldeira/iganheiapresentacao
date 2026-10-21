@@ -628,6 +628,10 @@ export async function popularProcessoLicitatorio(
   }
 
   // ===== 14. Cabeçalho da licitação (análise IA + etapa atual) =====
+  // NOTA: o status geral NÃO é alterado aqui — a variedade de status da
+  // base de demonstração é definida pelo cenário por empresa
+  // (aplicarCenariosPorEmpresa / aplicarStatusVariado). Gravar sempre
+  // 'em_andamento' aqui apagaria essa variedade.
   {
     const { error } = await supabase
       .from('licitacoes')
@@ -636,7 +640,6 @@ export async function popularProcessoLicitatorio(
         analise_ia_status: 'concluida',
         analise_ia_data: dataAprov(12),
         etapa_atual_codigo: 'resultado',
-        status: 'em_andamento',
       })
       .eq('id', licitacaoId);
     if (error) erros.push(`licitacoes: ${error.message}`);
